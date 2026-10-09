@@ -8,6 +8,13 @@
       "when": 1791580978361,
       "tag": "0000_instance_info",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791582026473,
+      "tag": "0001_domain_model",
+      "breakpoints": true
     }
   ]
 }

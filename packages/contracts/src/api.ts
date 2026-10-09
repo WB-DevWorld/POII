@@ -1,0 +1,359 @@
+// HTTP API contract for POII (release one, manual journey). Mirrors docs/api.md.
+// Request and response shapes are zod schemas so the API validates input and the web app types output.
+import { z } from 'zod';
+import {
+  ActorKind, AnchorResult, Authority, EvidenceRole, LifecycleStatus, Locator, RecordKind, ReviewState,
+  StatedRole, StatementMode, TimeStatus,
+} from './vocabulary.js';
+
+export const Id = z.uuid();
+export const IsoTime = z.iso.datetime({ offset: true });
+
+export const ApiError = z.object({
+  error: z.string(),
+  message: z.string(),
+  requestId: z.string(),
+  details: z.unknown().optional(),
+});
+export type ApiError = z.infer<typeof ApiError>;
+
+// ----- identity -------------------------------------------------------------------------------
+
+export const ActorView = z.object({
+  id: Id,
+  kind: ActorKind,
+  displayName: z.string(),
+  authority: Authority.nullable(),
+  details: z.record(z.string(), z.unknown()),
+  revokedAt: IsoTime.nullable(),
+});
+export type ActorView = z.infer<typeof ActorView>;
+
+export const MeResponse = z.object({
+  actor: ActorView,
+  workspace: z.object({ id: Id, name: z.string() }),
+  capabilities: z.object({ canConfirm: z.boolean(), canDelete: z.boolean(), canPropose: z.boolean() }),
+  aiEnabled: z.boolean(),
+});
+export type MeResponse = z.infer<typeof MeResponse>;
+
+export const CreateActorRequest = z.object({
+  kind: z.enum(['person', 'ai_assistant']),
+  displayName: z.string().min(1).max(200),
+  details: z.record(z.string(), z.unknown()).default({}),
+});
+export type CreateActorRequest = z.infer<typeof CreateActorRequest>;
+
+// ----- sources --------------------------------------------------------------------------------
+
+export const SourceOrigin = z.record(z.string(), z.unknown());
+
+export const CreateSourceRequest = z.object({
+  title: z.string().min(1).max(500),
+  kind: z.enum(['paste', 'upload']),
+  content: z.string().min(1).max(20_000_000),
+  mediaType: z.string().max(100).default('text/plain'),
+  fileName: z.string().max(500).optional(),
+  origin: SourceOrigin.default({}),
+  originKey: z.string().max(500).optional(),
+  aiAllowed: z.boolean().default(true),
+});
+export type CreateSourceRequest = z.infer<typeof CreateSourceRequest>;
+
+export const RevisionMeta = z.object({
+  id: Id,
+  revisionNo: z.number().int().positive(),
+  contentSha256: z.string(),
+  byteLength: z.number().int().nonnegative(),
+  lineCount: z.number().int().nonnegative(),
+  note: z.string().nullable(),
+  createdAt: IsoTime,
+  createdByActorId: Id,
+});
+export type RevisionMeta = z.infer<typeof RevisionMeta>;
+
+export const RevisionView = RevisionMeta.extend({ contentText: z.string() });
+export type RevisionView = z.infer<typeof RevisionView>;
+
+export const SourceView = z.object({
+  id: Id,
+  title: z.string(),
+  kind: z.enum(['paste', 'upload', 'import']),
+  mediaType: z.string(),
+  origin: SourceOrigin,
+  originKey: z.string().nullable(),
+  aiAllowed: z.boolean(),
+  archivedAt: IsoTime.nullable(),
+  createdAt: IsoTime,
+  createdByActorId: Id,
+  currentRevision: RevisionMeta,
+  revisionCount: z.number().int().positive(),
+  recordCount: z.number().int().nonnegative(),
+  /** True when this call found an identical source and returned it instead of creating one. */
+  deduplicated: z.boolean().optional(),
+});
+export type SourceView = z.infer<typeof SourceView>;
+
+export const SourceDetail = SourceView.extend({
+  revisions: z.array(RevisionMeta),
+  currentRevision: RevisionView,
+});
+export type SourceDetail = z.infer<typeof SourceDetail>;
+
+export const AddRevisionRequest = z.object({ content: z.string().min(1).max(20_000_000), note: z.string().max(2000).optional() });
+export const UpdateSourceRequest = z.object({
+  title: z.string().min(1).max(500).optional(),
+  aiAllowed: z.boolean().optional(),
+  archived: z.boolean().optional(),
+});
+export const DeleteSourceRequest = z.object({ reason: z.string().max(2000).optional() });
+export const ListSourcesQuery = z.object({
+  archived: z.enum(['true', 'false', 'all']).default('false'),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+// ----- records --------------------------------------------------------------------------------
+
+export const EvidenceInput = z.object({
+  sourceId: Id,
+  /** Defaults to the source's current revision. */
+  revisionId: Id.optional(),
+  startChar: z.number().int().nonnegative(),
+  endChar: z.number().int().positive(),
+  role: EvidenceRole.default('primary'),
+});
+export type EvidenceInput = z.infer<typeof EvidenceInput>;
+
+export const TimeConflict = z.object({ value: IsoTime.nullable(), sourceId: Id.optional(), note: z.string().max(500).optional() });
+
+export const RecordTimes = z.object({
+  effectiveAt: IsoTime.nullable().optional(),
+  effectiveAtStatus: TimeStatus.optional(),
+  observedAt: IsoTime.nullable().optional(),
+  observedAtStatus: TimeStatus.optional(),
+  timeConflicts: z.array(TimeConflict).nullable().optional(),
+});
+
+export const CreateRecordRequest = RecordTimes.extend({
+  kind: RecordKind,
+  title: z.string().min(1).max(500),
+  body: z.string().max(100_000).default(''),
+  lifecycleStatus: LifecycleStatus.default('unknown'),
+  statedByActorId: Id.nullable().optional(),
+  statedRole: StatedRole.default('unknown'),
+  statementMode: StatementMode,
+  supersedesRecordId: Id.optional(),
+  evidence: z.array(EvidenceInput).min(1),
+});
+export type CreateRecordRequest = z.infer<typeof CreateRecordRequest>;
+
+export const UpdateRecordRequest = RecordTimes.extend({
+  title: z.string().min(1).max(500).optional(),
+  body: z.string().max(100_000).optional(),
+  kind: RecordKind.optional(),
+  lifecycleStatus: LifecycleStatus.optional(),
+  statedByActorId: Id.nullable().optional(),
+  statedRole: StatedRole.optional(),
+  statementMode: StatementMode.optional(),
+  note: z.string().max(2000).optional(),
+});
+export type UpdateRecordRequest = z.infer<typeof UpdateRecordRequest>;
+
+export const ConfirmRecordRequest = z.object({
+  note: z.string().max(2000).optional(),
+  /** Defaults to supersedesRecordId when the record supersedes another. */
+  antecedentRecordId: Id.optional(),
+});
+export const RejectRecordRequest = z.object({ reason: z.string().min(1).max(2000) });
+export const SetStatusRequest = z.object({
+  lifecycleStatus: LifecycleStatus,
+  observedAt: IsoTime.nullable().optional(),
+  observedAtStatus: TimeStatus.optional(),
+  note: z.string().max(2000).optional(),
+});
+export const SupersedeRecordRequest = CreateRecordRequest.omit({ supersedesRecordId: true });
+
+export const EvidenceView = z.object({
+  id: Id,
+  sourceId: Id.nullable(),
+  originalSourceId: Id,
+  sourceTitle: z.string().nullable(),
+  revisionId: Id.nullable(),
+  revisionNo: z.number().int().nullable(),
+  locator: Locator,
+  role: EvidenceRole,
+  anchorResult: AnchorResult,
+  /** False when the source was deleted; exports list it as unavailable. */
+  available: z.boolean(),
+  sourceAiAllowed: z.boolean().nullable(),
+});
+export type EvidenceView = z.infer<typeof EvidenceView>;
+
+export const ApprovalView = z.object({
+  id: Id,
+  approvedByActorId: Id,
+  approvedByDisplayName: z.string(),
+  authority: Authority,
+  approvedAt: IsoTime,
+  antecedentRecordId: Id.nullable(),
+  note: z.string().nullable(),
+});
+export type ApprovalView = z.infer<typeof ApprovalView>;
+
+export const RecordSummary = z.object({
+  id: Id,
+  kind: RecordKind,
+  title: z.string(),
+  reviewState: ReviewState,
+  lifecycleStatus: LifecycleStatus,
+  statedRole: StatedRole,
+  statementMode: StatementMode,
+  statedByDisplayName: z.string().nullable(),
+  recordedAt: IsoTime,
+  effectiveAt: IsoTime.nullable(),
+  effectiveAtStatus: TimeStatus,
+  observedAt: IsoTime.nullable(),
+  observedAtStatus: TimeStatus,
+  supersedesRecordId: Id.nullable(),
+  supersededByRecordId: Id.nullable(),
+  aiAllowed: z.boolean(),
+  versionNo: z.number().int().positive(),
+  updatedAt: IsoTime,
+});
+export type RecordSummary = z.infer<typeof RecordSummary>;
+
+export const RecordVersionView = z.object({
+  versionNo: z.number().int().positive(),
+  changeKind: z.enum(['create', 'edit', 'confirm', 'reject', 'supersede', 'status', 'evidence']),
+  changedByActorId: Id,
+  changedByDisplayName: z.string(),
+  changedAt: IsoTime,
+  note: z.string().nullable(),
+  snapshot: z.record(z.string(), z.unknown()),
+});
+
+export const RecordDetail = RecordSummary.extend({
+  body: z.string(),
+  statedByActorId: Id.nullable(),
+  timeConflicts: z.array(TimeConflict).nullable(),
+  rejectedAt: IsoTime.nullable(),
+  rejectionReason: z.string().nullable(),
+  origin: z.record(z.string(), z.unknown()).nullable(),
+  evidence: z.array(EvidenceView),
+  approvals: z.array(ApprovalView),
+  versions: z.array(RecordVersionView),
+  /** The chain of confirmed successors, nearest first. Empty when the record is current or unconfirmed. */
+  supersededBy: z.array(z.object({ id: Id, title: z.string(), reviewState: ReviewState })),
+  supersedes: z.object({ id: Id, title: z.string(), reviewState: ReviewState }).nullable(),
+});
+export type RecordDetail = z.infer<typeof RecordDetail>;
+
+export const ListRecordsQuery = z.object({
+  kind: RecordKind.optional(),
+  reviewState: ReviewState.optional(),
+  lifecycleStatus: LifecycleStatus.optional(),
+  sourceId: Id.optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+// ----- views ----------------------------------------------------------------------------------
+
+export const CurrentDecision = z.object({
+  record: RecordSummary,
+  approval: ApprovalView,
+  /** Records this decision replaced, oldest last. */
+  replaced: z.array(z.object({ id: Id, title: z.string(), approvedAt: IsoTime.nullable() })),
+  primaryEvidence: EvidenceView.nullable(),
+  staleness: z.object({
+    lastObservedAt: IsoTime.nullable(),
+    label: z.enum(['observed', 'stale', 'unknown']),
+  }),
+});
+export type CurrentDecision = z.infer<typeof CurrentDecision>;
+
+export const SearchQuery = z.object({ q: z.string().min(1).max(500), limit: z.coerce.number().int().min(1).max(100).default(20) });
+
+export const SearchHit = z.object({
+  type: z.enum(['source', 'record']),
+  id: Id,
+  title: z.string(),
+  headline: z.string(),
+  rank: z.number(),
+  /** For sources: the first span that matches, so the UI can open the original there. */
+  span: z.object({ revisionId: Id, startChar: z.number().int(), endChar: z.number().int(), startLine: z.number().int() }).nullable(),
+  reviewState: ReviewState.nullable(),
+  kind: z.string().nullable(),
+});
+export const SearchResponse = z.object({ query: z.string(), hits: z.array(SearchHit) });
+export type SearchResponse = z.infer<typeof SearchResponse>;
+
+// ----- exports --------------------------------------------------------------------------------
+
+export const CONTEXT_PACK_FORMAT = 'poii.context-pack';
+export const CONTEXT_PACK_VERSION = 1;
+export const BACKUP_FORMAT = 'poii.backup';
+export const BACKUP_VERSION = 1;
+
+export const ContextPackRequest = z.object({
+  /** 'ai' excludes never-send-to-AI sources and the records derived from them. */
+  destination: z.enum(['person', 'ai']).default('person'),
+  kinds: z.array(RecordKind).optional(),
+  reviewStates: z.array(ReviewState).default(['confirmed']),
+  lifecycleStatuses: z.array(LifecycleStatus).optional(),
+  recordIds: z.array(Id).optional(),
+  sourceIds: z.array(Id).optional(),
+  includeExcerpts: z.boolean().default(true),
+  title: z.string().max(200).optional(),
+});
+export type ContextPackRequest = z.infer<typeof ContextPackRequest>;
+
+export const ManifestSource = z.object({
+  sourceId: Id,
+  title: z.string().nullable(),
+  revisionId: Id.nullable(),
+  contentSha256: z.string().nullable(),
+  reason: z.string(),
+});
+
+export const ContextPackManifest = z.object({
+  format: z.literal(CONTEXT_PACK_FORMAT),
+  formatVersion: z.literal(CONTEXT_PACK_VERSION),
+  exportRunId: Id,
+  generatedAt: IsoTime,
+  destination: z.enum(['person', 'ai']),
+  selection: z.record(z.string(), z.unknown()),
+  included: z.array(ManifestSource),
+  excluded: z.array(ManifestSource),
+  unavailable: z.array(ManifestSource),
+  recordCount: z.number().int().nonnegative(),
+});
+export type ContextPackManifest = z.infer<typeof ContextPackManifest>;
+
+export const ContextPackResponse = z.object({
+  exportRunId: Id,
+  manifest: ContextPackManifest,
+  markdown: z.string(),
+  json: z.record(z.string(), z.unknown()),
+});
+export type ContextPackResponse = z.infer<typeof ContextPackResponse>;
+
+export const ExportRunView = z.object({
+  id: Id,
+  kind: z.enum(['context_pack', 'backup']),
+  formatVersion: z.number().int(),
+  createdAt: IsoTime,
+  contentSha256: z.string(),
+  manifest: z.record(z.string(), z.unknown()),
+});
+
+export const RestoreRequest = z.object({ backup: z.record(z.string(), z.unknown()) });
+export const RestoreResponse = z.object({
+  restored: z.object({
+    sources: z.number().int(), revisions: z.number().int(), records: z.number().int(), approvals: z.number().int(),
+    evidence: z.number().int(), versions: z.number().int(), actors: z.number().int(), tombstones: z.number().int(),
+    auditEvents: z.number().int(),
+  }),
+  workspaceId: Id,
+});

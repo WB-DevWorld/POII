@@ -8,15 +8,37 @@ updates:
       minor-and-patch:
         update-types: [minor, patch]
     open-pull-requests-limit: 5
+    ignore:
+      # Major toolchain moves are deliberate decisions (ADR), not dependency bumps.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      - dependency-name: next
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@nestjs/*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: react
+        update-types: ["version-update:semver-major"]
+      - dependency-name: react-dom
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
   - package-ecosystem: docker
     directory: /apps/api
     schedule:
       interval: weekly
+    ignore:
+      # Images stay on Node 24 LTS (BUILD-BASELINE.md §7).
+      - dependency-name: "*node"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: docker
     directory: /apps/web
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: "*node"
+        update-types: ["version-update:semver-major"]
