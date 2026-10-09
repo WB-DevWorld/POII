@@ -1,0 +1,89 @@
+name: Risk classification
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled, ready_for_review]
+permissions:
+  contents: write
+  pull-requests: write
+concurrency:
+  group: risk-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  classify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      risk: ${{ steps.classify.outputs.risk }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Always classify with the policy on the base branch, never the PR's copy.
+          ref: ${{ github.event.pull_request.base.sha }}
+      - name: Classify changed paths against the protected policy
+        id: classify
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const policy = JSON.parse(fs.readFileSync('.github/release-policy/risk-classes.json', 'utf8'));
+            const { owner, repo } = context.repo;
+            const number = context.payload.pull_request.number;
+            const files = await github.paginate(github.rest.pulls.listFiles, { owner, repo, pull_number: number, per_page: 100 });
+            const globToRegex = glob => {
+              const escaped = glob.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+              const pattern = escaped
+                .replace(/\*\*\//g, '\u0000')
+                .replace(/\*\*/g, '\u0001')
+                .replace(/\*/g, '[^/]*')
+                .replace(/\u0000/g, '(?:.*/)?')
+                .replace(/\u0001/g, '.*');
+              return new RegExp(`^${pattern}$`);
+            };
+            const gatedClasses = new Map();
+            for (const file of files) {
+              for (const rule of policy.gated) {
+                if (rule.paths.some(glob => globToRegex(glob).test(file.filename))) {
+                  if (!gatedClasses.has(rule.class)) gatedClasses.set(rule.class, []);
+                  gatedClasses.get(rule.class).push(file.filename);
+                }
+              }
+            }
+            const labels = context.payload.pull_request.labels.map(label => label.name);
+            const raisedByLabel = labels.includes('risk:gated');
+            const gated = gatedClasses.size > 0 || raisedByLabel;
+            const risk = gated ? 'gated' : 'routine';
+            const want = gated ? 'risk:gated' : 'risk:routine';
+            const drop = gated ? 'risk:routine' : 'risk:gated';
+            for (const name of ['risk:gated', 'risk:routine']) {
+              try { await github.rest.issues.getLabel({ owner, repo, name }); }
+              catch { await github.rest.issues.createLabel({ owner, repo, name,
+                color: name === 'risk:gated' ? 'b60205' : '0e8a16',
+                description: name === 'risk:gated' ? 'Waits for the owner (release policy)' : 'Auto-merges when green' }); }
+            }
+            if (!labels.includes(want)) await github.rest.issues.addLabels({ owner, repo, issue_number: number, labels: [want] });
+            if (labels.includes(drop) && !(gated && drop === 'risk:gated')) {
+              try { await github.rest.issues.removeLabel({ owner, repo, issue_number: number, name: drop }); } catch {}
+            }
+            let summary = `## Risk class: **${risk}**\n\n`;
+            if (gatedClasses.size) {
+              for (const [cls, paths] of gatedClasses) summary += `- \`${cls}\`: ${paths.map(p => `\`${p}\``).join(', ')}\n`;
+            }
+            if (raisedByLabel) summary += '- raised to gated by label\n';
+            if (!gated) summary += 'No gated path touched. Auto-merge is enabled once required checks pass.\n';
+            else summary += '\nGated: waits for the owner\'s explicit approval (see docs/release-policy.md). Labels cannot lower this.\n';
+            await core.summary.addRaw(summary).write();
+            core.setOutput('risk', risk);
+      - name: Enable auto-merge for routine PRs
+        if: >-
+          steps.classify.outputs.risk == 'routine' &&
+          github.event.pull_request.draft == false &&
+          github.event.pull_request.head.repo.full_name == github.repository &&
+          github.actor != 'dependabot[bot]'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr merge --auto --squash "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}"
+      - name: Disable auto-merge for gated PRs
+        if: steps.classify.outputs.risk == 'gated'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr merge --disable-auto "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" || true

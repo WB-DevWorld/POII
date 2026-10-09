@@ -1,0 +1,10 @@
+# Protected policy and classification files: the owner reviews every change.
+/.github/release-policy/ @WB-DevWorld
+/.github/workflows/ @WB-DevWorld
+/.github/CODEOWNERS @WB-DevWorld
+/docs/release-policy.md @WB-DevWorld
+/BUILD-BASELINE.md @WB-DevWorld
+/OWNERSHIP.md @WB-DevWorld
+/docs/adr/ @WB-DevWorld
+/apps/api/drizzle/ @WB-DevWorld
+/compose.dokploy.yaml @WB-DevWorld

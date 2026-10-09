@@ -1,0 +1,21 @@
+node_modules/
+.next/
+dist/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+*.dump
+*.sql.gz
+artifacts/
+playwright-report/
+test-results/
+.poii-storage/
+coverage/
+.DS_Store
+Thumbs.db
+# Private evidence never belongs here
+evidence/
+project_sources/
+private/
+*.zip

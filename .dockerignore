@@ -1,0 +1,12 @@
+**/node_modules
+**/.next
+**/dist
+.git
+.env*
+artifacts
+playwright-report
+test-results
+.poii-storage
+evidence
+project_sources
+private

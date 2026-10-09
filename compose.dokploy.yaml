@@ -1,0 +1,70 @@
+# Dokploy Compose service; configure HTTPS domains in Dokploy's Domains tab.
+# Keep Isolated Deployment off. No host ports are published. Images are pinned by digest.
+# One Dokploy service, secret set and volume per environment (staging, production).
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: poii
+      POSTGRES_USER: poii
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+    volumes: [poii_data:/var/lib/postgresql/data]
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U poii -d poii"]
+      interval: 10s
+      retries: 10
+
+  migrate:
+    image: ${API_IMAGE:?pin qualified image digest}
+    restart: "no"
+    command: ["node", "dist/migrate.js"]
+    environment:
+      DATABASE_URL: postgres://poii:${POSTGRES_PASSWORD:?}@db:5432/poii
+    networks: [backend]
+    depends_on:
+      db: { condition: service_healthy }
+
+  api:
+    image: ${API_IMAGE:?pin qualified image digest}
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://poii:${POSTGRES_PASSWORD:?}@db:5432/poii
+      GIT_SHA: ${GIT_SHA:?}
+      WEB_BASE_URL: ${WEB_BASE_URL:?}
+      POII_IDENTITY_ADAPTER: ${POII_IDENTITY_ADAPTER:-local-owner}
+      POII_SESSION_SECRET: ${POII_SESSION_SECRET:?}
+      POII_STORAGE_ADAPTER: ${POII_STORAGE_ADAPTER:-local}
+      POII_STORAGE_LOCAL_DIR: /data/storage
+      POII_AI_ENABLED: ${POII_AI_ENABLED:-false}
+      POII_AI_MONTHLY_CAP_USD_ANTHROPIC: ${POII_AI_MONTHLY_CAP_USD_ANTHROPIC:-20}
+      POII_AI_MONTHLY_CAP_USD_OPENAI: ${POII_AI_MONTHLY_CAP_USD_OPENAI:-20}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    volumes: [poii_storage:/data/storage]
+    expose: ["3001"]
+    networks: [backend]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  web:
+    image: ${WEB_IMAGE:?pin qualified image digest}
+    restart: unless-stopped
+    environment:
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+      WEB_BASE_URL: ${WEB_BASE_URL:?}
+      API_INTERNAL_URL: http://api:3001
+      GIT_SHA: ${GIT_SHA:?}
+    expose: ["3000"]
+    networks: [backend]
+    depends_on:
+      api: { condition: service_started }
+
+networks:
+  backend:
+    internal: true
+volumes:
+  poii_data:
+  poii_storage:

@@ -1,0 +1,13 @@
+{
+  "name": "POII",
+  "short_name": "POII",
+  "description": "Owner-controlled record of evidence, decisions, authority, change history and current state.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f6f5f1",
+  "theme_color": "#1f5f8b",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

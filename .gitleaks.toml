@@ -1,0 +1,17 @@
+title = "POII secret scanning"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Documented placeholders and fixtures"
+paths = [
+  '''\.env\.example$''',
+  '''^fixtures/''',
+  '''pnpm-lock\.yaml$'''
+]
+regexes = [
+  '''test-only-password''',
+  '''change-me-locally''',
+  '''ci-only-placeholder'''
+]

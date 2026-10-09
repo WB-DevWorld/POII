@@ -1,0 +1,19 @@
+# Local development only: PostgreSQL for the API. The apps run with `pnpm dev`.
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: poii
+      POSTGRES_USER: poii
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-locally}
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - poii_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U poii -d poii"]
+      interval: 5s
+      retries: 20
+volumes:
+  poii_pg_data:

@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "description": "Path-based risk classification for POII pull requests. A PR touching any gated path is gated. Labels can raise a PR to gated, never lower it. Unclassifiable changes are gated. Changing this file is itself gated.",
+  "gated": [
+    {
+      "class": "identity-auth-permissions-tokens",
+      "paths": [
+        "apps/api/src/identity/**",
+        "apps/api/src/ports/identity*",
+        "apps/api/src/adapters/identity/**",
+        "apps/api/src/auth/**",
+        "apps/api/src/tokens/**",
+        "apps/api/src/authorization/**",
+        "apps/web/src/app/(auth)/**",
+        "apps/web/src/lib/session*"
+      ]
+    },
+    {
+      "class": "information-policy",
+      "paths": [
+        "apps/api/src/policy/**",
+        "apps/api/src/ai/disclosure*",
+        "apps/api/src/sources/deletion*",
+        "apps/api/src/retention/**"
+      ]
+    },
+    {
+      "class": "ownership-and-data-model",
+      "paths": [
+        "OWNERSHIP.md",
+        "apps/api/src/db/schema/**",
+        "apps/api/drizzle/**",
+        "packages/contracts/src/export-format/**"
+      ]
+    },
+    {
+      "class": "destructive-migrations",
+      "paths": [
+        "apps/api/drizzle/**/*contract*",
+        "apps/api/drizzle/**/*drop*"
+      ]
+    },
+    {
+      "class": "spending-and-caps",
+      "paths": [
+        "apps/api/src/ai/caps/**",
+        "apps/api/src/ai/providers/**",
+        "apps/api/src/ai/budget*"
+      ]
+    },
+    {
+      "class": "licence-and-visibility",
+      "paths": [
+        "LICENSE",
+        "LICENSE.*",
+        "LICENCE",
+        "LICENCE.*"
+      ]
+    },
+    {
+      "class": "other-peers",
+      "paths": [
+        "docs/peers/**",
+        "infra/peers/**"
+      ]
+    },
+    {
+      "class": "release-workflows-and-policy",
+      "paths": [
+        ".github/workflows/publish.yml",
+        ".github/workflows/deploy-*.yml",
+        ".github/workflows/risk-classify.yml",
+        ".github/release-policy/**",
+        ".github/CODEOWNERS",
+        "docs/release-policy.md",
+        "compose.dokploy.yaml",
+        "infra/releases/**"
+      ]
+    }
+  ],
+  "routine": [
+    {
+      "class": "routine",
+      "paths": [
+        "**"
+      ]
+    }
+  ]
+}
