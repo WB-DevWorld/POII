@@ -1,11 +1,12 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { config } from './config.js';
-import { createApp } from './app.module.js';
+import { configureHttpApp, createApp } from './app.module.js';
 
 const settings = config();
 const { module: AppModule, shutdown } = createApp(settings);
 const app = await NestFactory.create(AppModule, { logger: ['error', 'warn', 'log'] });
+configureHttpApp(app);
 app.enableShutdownHooks();
 await app.listen(settings.port, '0.0.0.0');
 console.info(JSON.stringify({ event: 'api.started', port: settings.port, version: settings.version, aiEnabled: settings.aiEnabled }));

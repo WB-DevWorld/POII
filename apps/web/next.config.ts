@@ -6,6 +6,8 @@ const config: NextConfig = {
   output: 'standalone',
   reactStrictMode: true,
   poweredByHeader: false,
+  // Sources up to the API's 20 MB content limit and backups with inlined originals go through server actions.
+  experimental: { serverActions: { bodySizeLimit: '64mb' } },
   async headers() {
     return [
       { source: '/sources/:path*', headers: [noStore] },
@@ -13,7 +15,10 @@ const config: NextConfig = {
       { source: '/search', headers: [noStore] },
       { source: '/decisions', headers: [noStore] },
       { source: '/export', headers: [noStore] },
+      { source: '/export/:path*', headers: [noStore] },
       { source: '/backup', headers: [noStore] },
+      { source: '/backup/:path*', headers: [noStore] },
+      { source: '/', headers: [noStore] },
     ];
   },
 };

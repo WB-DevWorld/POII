@@ -3,6 +3,8 @@ export interface Settings {
   port: number;
   version: string;
   identityAdapter: 'local-owner';
+  /** ADR-0004: local-owner is refused for a non-loopback WEB_BASE_URL unless this is set deliberately. */
+  allowLocalOwnerRemote: boolean;
   ownerDisplayName: string;
   storageAdapter: 'local';
   storageLocalDir: string;
@@ -22,6 +24,7 @@ export function config(env: NodeJS.ProcessEnv = process.env): Settings {
     port: Number(env.PORT ?? 3001),
     version: env.GIT_SHA ?? 'dev',
     identityAdapter,
+    allowLocalOwnerRemote: env.POII_ALLOW_LOCAL_OWNER_REMOTE === 'true',
     ownerDisplayName: env.POII_OWNER_DISPLAY_NAME ?? 'Owner',
     storageAdapter,
     storageLocalDir: env.POII_STORAGE_LOCAL_DIR ?? '.poii-storage',
