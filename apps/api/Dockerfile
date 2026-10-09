@@ -1,4 +1,4 @@
-FROM public.ecr.aws/docker/library/node:24.19.0-alpine AS build
+FROM public.ecr.aws/docker/library/node:24.21.0-alpine AS build
 WORKDIR /app
 RUN npm install -g pnpm@11.19.0
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
@@ -10,7 +10,7 @@ COPY packages/contracts packages/contracts
 COPY apps/api apps/api
 RUN pnpm --filter @poii/contracts build && pnpm --filter @poii/api build
 
-FROM public.ecr.aws/docker/library/node:24.19.0-alpine
+FROM public.ecr.aws/docker/library/node:24.21.0-alpine
 ARG GIT_SHA=unknown
 ENV NODE_ENV=production
 ENV GIT_SHA=${GIT_SHA}
