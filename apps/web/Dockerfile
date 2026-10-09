@@ -1,4 +1,4 @@
-FROM node:24.19.0-alpine AS build
+FROM node:26.10.0-alpine AS build
 WORKDIR /app
 ARG GIT_SHA=unknown
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -13,7 +13,7 @@ COPY packages/contracts packages/contracts
 COPY apps/web apps/web
 RUN pnpm --filter @poii/contracts build && pnpm --filter @poii/web build
 
-FROM node:24.19.0-alpine
+FROM node:26.10.0-alpine
 ARG GIT_SHA=unknown
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
