@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { Locator, RecordKind, StatementMode, statedRoles } from '../src/index.ts';
+import { Locator, RecordKind, StatementMode, statedRoles } from '../src/index.js';
 
 test('vocabulary keeps attribution separate from approval', () => {
   assert.ok(statedRoles.includes('assistant'));
