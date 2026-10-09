@@ -43,7 +43,7 @@ jobs:
             git /repo --config /repo/.gitleaks.toml --redact --no-banner --exit-code 1
       - name: Check for forbidden private material and environment files
         run: bash infra/scripts/forbidden-material.sh
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '24.19.0'
       - name: Install pnpm
