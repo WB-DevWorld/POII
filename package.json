@@ -7,9 +7,10 @@
   },
   "scripts": {
     "build": "pnpm -r build",
-    "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test",
-    "lint": "pnpm -r lint",
+    "contracts": "pnpm --filter @poii/contracts build",
+    "typecheck": "pnpm run contracts && pnpm -r typecheck",
+    "test": "pnpm run contracts && pnpm -r test",
+    "lint": "pnpm run contracts && pnpm -r lint",
     "dev": "pnpm -r --parallel dev"
   }
 }
