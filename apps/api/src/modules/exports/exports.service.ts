@@ -15,6 +15,7 @@ import type { Db } from '../../db/client.js';
 import { exportRun, record, recordEvidence, source, sourceRevision, sourceTombstone } from '../../db/schema/index.js';
 import type { Exec } from '../../db/types.js';
 import { buildContextPack, type PackSourceInfo } from '../../domain/context-pack.js';
+import { aiNotAllowed, contextPackWithheldReason } from '../../ai/disclosure.js';
 import type { StoragePort } from '../../ports/storage.js';
 import { loadApprovals, loadEvidence, toSummaries } from '../records/records.repository.js';
 import { stalenessOf } from '../views/views.service.js';
@@ -149,16 +150,35 @@ export class ExportsService {
     }));
   }
 
-  /** The stored context pack or backup document. */
-  async get(ctx: RequestContext, id: string): Promise<unknown> {
+  /** #18: the export runs an AI context may read (see contextPackWithheldReason), and how many others there are. */
+  async listForAi(ctx: RequestContext): Promise<{ runs: z.infer<typeof ExportRunView>[]; withheld: number }> {
+    const all = await this.list(ctx);
+    const runs: z.infer<typeof ExportRunView>[] = [];
+    for (const run of all) {
+      if (!(await contextPackWithheldReason(this.db.orm, ctx.workspace.id, run))) runs.push(run);
+    }
+    return { runs, withheld: all.length - runs.length };
+  }
+
+  /** The stored context pack or backup document. `ai` (#18): only an AI-readable context pack, else 409 ai_not_allowed. */
+  async get(ctx: RequestContext, id: string, ai = false): Promise<unknown> {
     requireCapability(ctx.actor, 'read');
     const run = (await this.db.orm.select().from(exportRun).where(and(eq(exportRun.id, id), eq(exportRun.workspaceId, ctx.workspace.id))))[0];
     if (!run) throw notFound('Export');
     // A backup contains everything, including never-send material: reading it back needs authority.
     requireCapability(ctx.actor, run.kind === 'backup' ? 'confirm' : 'read');
+    if (ai) {
+      const early = await contextPackWithheldReason(this.db.orm, ctx.workspace.id, run);
+      if (early) throw aiNotAllowed('This export is not readable in AI context', { exportRunId: run.id, reason: early });
+    }
     const bytes = run.storageKey ? await this.storage.get(run.storageKey) : null;
     if (!bytes) throw notFound('Export content');
-    return JSON.parse(Buffer.from(bytes).toString('utf8'));
+    const content: unknown = JSON.parse(Buffer.from(bytes).toString('utf8'));
+    if (ai) {
+      const reason = await contextPackWithheldReason(this.db.orm, ctx.workspace.id, run, content);
+      if (reason) throw aiNotAllowed('This export is not readable in AI context', { exportRunId: run.id, reason });
+    }
+    return content;
   }
 }
 

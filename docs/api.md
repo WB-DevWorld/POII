@@ -132,3 +132,46 @@ Every other Better Auth endpoint (email sign-in, social sign-in, password reset,
 | GET | `/v1/tokens` | → `TokenView[]` | Owner only. `status`: active, expired, revoked. |
 | DELETE | `/v1/tokens/:id` | → 204 | Owner only. Immediate; revoking twice is a no-op. |
 <!-- end #14 auth and tokens -->
+<!-- #18 read-only API and MCP -->
+## Read-only API for external clients (M3)
+
+External clients read POII over the same `/v1` endpoints, authenticated with an owner token of scope `read` (`Authorization: Bearer poii_…`, see above). There is no separate read API and no bundle endpoint; a thin client needs these routes, all capability `read`:
+
+| Method | Path | Response | Notes |
+| --- | --- | --- | --- |
+| GET | `/v1/me` | `MeResponse` | Who the token is and what it may do. |
+| GET | `/v1/decisions/current` | `CurrentDecision[]` | |
+| GET | `/v1/search?q=&limit=` | `SearchResponse` | |
+| GET | `/v1/records`, `/v1/records/:id` | `RecordSummary[]`, `RecordDetail` | |
+| GET | `/v1/sources`, `/v1/sources/:id`, `/v1/sources/:id/records` | `SourceView[]`, `SourceDetail`, `RecordSummary[]` | |
+| GET | `/v1/sources/:id/revisions/:revisionId` | `RevisionView` | The whole revision text. |
+| GET | `/v1/sources/:id/revisions/:revisionId/span?startChar=&endChar=` | `SourceSpanView` | **New in #18.** `[startChar, endChar)` in UTF-16 code units, as in evidence locators, with `startLine`, `endLine`, `text`, `textSha256` (equal to a locator's `excerptSha256` for the same span), `revisionNo`, `isCurrentRevision` and `revisionContentSha256`. At most `MAX_SPAN_CHARS` (200 000) characters (`400 span_too_large`); an empty, out-of-range or surrogate-splitting span is `400 invalid_span`. |
+| GET | `/v1/exports`, `/v1/exports/:id` | `ExportRunView[]`, `ContextPackResponse` | Stored context packs. A backup document needs authority (`403`). |
+
+### AI context: `X-POII-AI-Context: 1`
+
+A client that is itself an AI (an MCP server, Claude, ChatGPT, Cursor or any agent) sends `X-POII-AI-Context: 1` (`AI_CONTEXT_HEADER` in contracts). The read endpoints then apply the never-send-to-AI rule of ADR-0007 to what they return, so an AI never receives content from a source with `aiAllowed = false` or from a record derived from one. The POII MCP server (`apps/mcp`) always sends it. Absent or `0`: nothing changes. Any other value: `400 invalid_ai_context_header`. The rule is enforced on the server; it does not depend on the token, and a client that omits the header is treated as a person-facing client (owner tokens are issued by the owner, who decides where they go).
+
+"Derived" means: the record's stored `aiAllowed` is false, or any of its live evidence cites a never-send source (checked independently on every request, so marking a source never-send takes effect at once).
+
+| Endpoint | In AI context |
+| --- | --- |
+| `GET /v1/sources/:id`, `/revisions/:revisionId`, `/revisions/:revisionId/span`, `/records` | A never-send source answers `409 ai_not_allowed` with `details: { sourceId }`. |
+| `GET /v1/sources` | Never-send sources are left out; the response header `X-POII-Withheld: <n>` (`WITHHELD_HEADER`) counts them for the same filter, ignoring paging. |
+| `GET /v1/records/:id` | A derived record returns `WithheldRecord`: `{ id, kind, title, supersedesRecordId, supersededByRecordId, contentWithheld: true, reason: 'never_send_to_ai' }`, nothing else. Any other record is served in full except that every `versions[].snapshot` is `{}` (an earlier version can hold content of evidence that has since been removed). |
+| `GET /v1/records`, `GET /v1/sources/:id/records` | Derived records appear as `WithheldRecord` in place (`AiRecordSummary`). |
+| `GET /v1/decisions/current` | A derived decision appears as `{ record: WithheldRecord, contentWithheld: true }` (`AiCurrentDecision`): it is current, but its approval, evidence and staleness are not shown. |
+| `GET /v1/search` | Never-send sources and derived records are not searched at all. No count is given: a count would tell an AI whether its query matches never-send content. |
+| `GET /v1/exports` | Only context packs built with `destination: ai` whose included sources and records are all still AI-allowed are listed; `X-POII-Withheld` counts the rest (person packs, backups, packs touching material marked never-send since). |
+| `GET /v1/exports/:id` | Anything else answers `409 ai_not_allowed` with `details: { exportRunId, reason }`, `reason` one of `not_an_ai_pack`, `source_now_never_send`, `record_now_never_send`. |
+| `POST /v1/exports/context-pack` | The body must say `destination: "ai"` explicitly; otherwise `409 ai_not_allowed`. |
+| `GET /v1/me`, `GET /v1/actors` | Unchanged (no source content). |
+
+Titles of derived records are shown so an AI can say that a relevant record exists and is withheld; the title of a never-send source is never shown. Write and confirm rules are unchanged by the header: a `read` token gets `403 scope_required` on propose routes, and no token confirms, rejects, deletes or changes `aiAllowed` (`403 authority_required`).
+
+Known limits: an `Idempotency-Key` replay of `POST /v1/exports/context-pack` is answered by the interceptor before the AI-context check, so a client that reuses a key the owner used for a person pack in the same workspace would get that stored reply; keys are client-chosen secrets in practice, but the interceptor does not yet look at the header.
+
+### MCP server
+
+`apps/mcp` (`@poii/mcp`) is a stdio MCP server with six read tools, each a thin wrapper over one GET above: `poii_current_decisions`, `poii_search` (`query`, `limit?`), `poii_record` (`id`), `poii_source_span` (`sourceId`, `revisionId`, `startChar`, `endChar`), `poii_context_packs` and `poii_context_pack` (`id`). It reads `POII_API_URL` and `POII_TOKEN` from the environment, always sends `X-POII-AI-Context: 1`, returns JSON text, and returns API errors as tool errors with the API's code and status, never retried and never with another credential. There are no write tools (release-one scope). Client configuration: `apps/mcp/README.md`. Tested clients: `docs/compatibility-matrix.md`.
+<!-- end #18 read-only API and MCP -->
