@@ -579,3 +579,133 @@ export type TokenView = z.infer<typeof TokenView>;
 /** The only response that ever contains the secret. */
 export const CreatedTokenResponse = z.object({ token: TokenView, secret: z.string() });
 export type CreatedTokenResponse = z.infer<typeof CreatedTokenResponse>;
+
+// #20 conversation import ----------------------------------------------------------------------
+// Selected conversations from the official ChatGPT and Claude.ai exports (docs/conversation-import.md).
+// Nothing here creates records or approvals: an import creates sources only.
+
+export const conversationProviders = ['chatgpt', 'claude'] as const;
+export const ConversationProvider = z.enum(conversationProviders);
+export type ConversationProvider = z.infer<typeof ConversationProvider>;
+
+/** At most this many conversations per import request: selected, never bulk. */
+export const CONVERSATION_IMPORT_MAX_SELECTED = 50;
+
+/** The parsed `conversations.json` of one export, sent as JSON (the API's JSON body limit applies). */
+export const ConversationPreviewRequest = z.object({
+  file: z.unknown(),
+  fileName: z.string().max(500).optional(),
+});
+export type ConversationPreviewRequest = z.infer<typeof ConversationPreviewRequest>;
+
+/** How a conversation in the file relates to what this workspace already holds (by origin key). */
+export const ConversationImportState = z.enum(['new', 'unchanged', 'changed', 'older', 'deleted']);
+export type ConversationImportState = z.infer<typeof ConversationImportState>;
+
+export const ConversationSummary = z.object({
+  provider: ConversationProvider,
+  id: z.string(),
+  originKey: z.string(),
+  title: z.string(),
+  messageCount: z.number().int().nonnegative(),
+  firstMessageAt: IsoTime.nullable(),
+  lastMessageAt: IsoTime.nullable(),
+  /** Messages whose export carries no usable timestamp; they are rendered as "time unknown". */
+  unknownTimeCount: z.number().int().nonnegative(),
+  /** Messages on the imported path that are not rendered (system, tool, hidden or empty). */
+  skippedMessageCount: z.number().int().nonnegative(),
+  /** ChatGPT only: messages on branches other than the current one; never imported. */
+  otherBranchMessageCount: z.number().int().nonnegative(),
+  importState: ConversationImportState,
+  sourceId: Id.nullable(),
+});
+export type ConversationSummary = z.infer<typeof ConversationSummary>;
+
+export const ConversationPreviewResponse = z.object({
+  provider: ConversationProvider,
+  importedFrom: z.enum(['chatgpt-export', 'claude-export']),
+  conversationCount: z.number().int().nonnegative(),
+  conversations: z.array(ConversationSummary),
+});
+export type ConversationPreviewResponse = z.infer<typeof ConversationPreviewResponse>;
+
+export const ConversationImportRequest = z.object({
+  file: z.unknown(),
+  fileName: z.string().max(500).optional(),
+  conversationIds: z.array(z.string().min(1).max(200)).min(1).max(CONVERSATION_IMPORT_MAX_SELECTED)
+    .refine(ids => new Set(ids).size === ids.length, 'conversationIds must be unique'),
+  /** When the export was produced, if the caller knows it. Recorded in origin; never inferred. */
+  exportedAt: IsoTime.optional(),
+  aiAllowed: z.boolean().default(true),
+});
+export type ConversationImportRequest = z.infer<typeof ConversationImportRequest>;
+
+/**
+ * Who said one message, resolved for a response (stored in origin as `origin.messages` + `origin.attribution`, the
+ * same shape as the #21 hook capture). Attribution, never approval.
+ */
+export const ImportedMessageAttribution = z.object({
+  index: z.number().int().positive(),
+  messageId: z.string().nullable(),
+  exportRole: z.enum(['user', 'assistant']),
+  /** assistant for assistant messages; unknown for the export's user until the owner says otherwise on a record. */
+  statedRole: z.enum(['assistant', 'unknown']),
+  /** The provider's ai_assistant actor for assistant messages; null for user messages. */
+  statedByActorId: Id.nullable(),
+  statementMode: z.literal('quoted'),
+  createdAt: IsoTime.nullable(),
+  timeStatus: z.enum(['known', 'unknown']),
+  /** The message block (header and quoted text) in the revision the map was computed for. */
+  startChar: z.number().int().nonnegative(),
+  endChar: z.number().int().nonnegative(),
+});
+export type ImportedMessageAttribution = z.infer<typeof ImportedMessageAttribution>;
+
+export const ConversationImportOutcome = z.enum(['created', 'revised', 'unchanged', 'older_revision', 'deleted_skipped', 'duplicate_content']);
+export type ConversationImportOutcome = z.infer<typeof ConversationImportOutcome>;
+
+export const ConversationImportResult = z.object({
+  conversationId: z.string(),
+  originKey: z.string(),
+  title: z.string(),
+  outcome: ConversationImportOutcome,
+  sourceId: Id.nullable(),
+  revisionId: Id.nullable(),
+  revisionNo: z.number().int().positive().nullable(),
+  messageCount: z.number().int().nonnegative(),
+  messages: z.array(ImportedMessageAttribution),
+});
+export type ConversationImportResult = z.infer<typeof ConversationImportResult>;
+
+export const ConversationImportResponse = z.object({
+  provider: ConversationProvider,
+  importedFrom: z.enum(['chatgpt-export', 'claude-export']),
+  assistantActor: z.object({ id: Id, displayName: z.string() }),
+  results: z.array(ConversationImportResult),
+});
+export type ConversationImportResponse = z.infer<typeof ConversationImportResponse>;
+
+export const MessageAttributionQuery = z.object({
+  sourceId: Id,
+  /** Defaults to the source's current revision. */
+  revisionId: Id.optional(),
+  startChar: z.coerce.number().int().nonnegative(),
+  endChar: z.coerce.number().int().positive(),
+}).refine(q => q.endChar > q.startChar, { message: 'endChar must be greater than startChar', path: ['endChar'] });
+export type MessageAttributionQuery = z.infer<typeof MessageAttributionQuery>;
+
+export const MessageAttributionResponse = z.object({
+  sourceId: Id,
+  revisionId: Id,
+  /** Every message block the span overlaps, read from the revision's own block headers. */
+  messages: z.array(ImportedMessageAttribution),
+  /** What a candidate citing this span should carry; null when the span crosses roles or touches no message. */
+  suggestion: z.object({
+    statedRole: z.enum(['assistant', 'unknown']),
+    statedByActorId: Id.nullable(),
+    statementMode: z.literal('quoted'),
+  }).nullable(),
+  reason: z.enum(['single_role', 'mixed_roles', 'outside_messages']),
+});
+export type MessageAttributionResponse = z.infer<typeof MessageAttributionResponse>;
+// end #20 conversation import ----
