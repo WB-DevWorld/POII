@@ -7,7 +7,11 @@ export interface BackupSettings {
   target: 'local' | 's3';
   keep: number;
   localDir: string | null;
-  s3: { endpoint: string; bucket: string; accessKeyId: string; secretAccessKey: string; region: string; prefix: string } | null;
+  s3: {
+    endpoint: string; bucket: string; accessKeyId: string; secretAccessKey: string; region: string; prefix: string;
+    /** POII_BACKUP_S3_TIMEOUT_MS; null keeps the defaults (10 min PUT, 60 s otherwise). */
+    timeoutMs: number | null;
+  } | null;
 }
 
 export interface BuildInfo {
@@ -42,6 +46,11 @@ export function backupSettings(env: NodeJS.ProcessEnv = process.env): BackupSett
   let prefix = env.POII_BACKUP_S3_PREFIX ?? 'poii/';
   if (prefix && !prefix.endsWith('/')) prefix += '/';
   if (prefix.startsWith('/')) throw new Error('POII_BACKUP_S3_PREFIX must not start with a slash');
+  const timeoutRaw = env.POII_BACKUP_S3_TIMEOUT_MS?.trim();
+  const timeoutMs = timeoutRaw ? Number(timeoutRaw) : null;
+  if (timeoutMs !== null && (!Number.isInteger(timeoutMs) || timeoutMs < 1000)) {
+    throw new Error(`POII_BACKUP_S3_TIMEOUT_MS must be a whole number of milliseconds of at least 1000, got ${timeoutRaw}`);
+  }
   return {
     target, keep, localDir: null,
     s3: {
@@ -51,6 +60,7 @@ export function backupSettings(env: NodeJS.ProcessEnv = process.env): BackupSett
       secretAccessKey: required(env, 'POII_BACKUP_S3_SECRET_KEY'),
       region: env.POII_BACKUP_S3_REGION?.trim() || 'us-east-1',
       prefix,
+      timeoutMs,
     },
   };
 }

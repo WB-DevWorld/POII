@@ -171,6 +171,7 @@ describe('manual journey with backup and restore (integration, fresh databases)'
     assert.equal(backup.sources.length, 3);
     assert.ok(backup.revisions.every(r => typeof r.originalBase64 === 'string'));
     assert.ok((await c1.get('/v1/exports')).body.some((r: { id: string; kind: string }) => r.id === backup.exportRunId && r.kind === 'backup'));
+    assert.ok(existsSync(join(api1!.storageDir, 'backups', `${backup.exportRunId}.json`)), 'HTTP backups keep their copy in storage');
 
     const me2Before = MeResponse.parse((await c2.get('/v1/me')).body);
     assert.notEqual(me2Before.workspace.id, me.workspace.id);

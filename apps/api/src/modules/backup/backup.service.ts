@@ -92,10 +92,12 @@ export interface BackupOptions {
   /** Recorded in the audit event, e.g. `http` or `backup-cli`. */
   via?: string;
   /**
-   * Keep a copy of the document in the storage port under `backups/<exportRunId>.json` (default true). The scheduled
-   * runner writes to its own target with its own retention and passes false, so the storage volume does not grow.
+   * Where the document's bytes go instead of the storage port's `backups/<exportRunId>.json` copy (the HTTP default).
+   * Called before the export run and audit event are committed: if it throws, nothing is recorded. The scheduled
+   * runner passes its target's put, so the storage volume does not grow and history never claims a backup that did
+   * not land. `info.contentSha256` is the SHA-256 of canonicalJson(doc), the value stored in export_run.
    */
-  storeCopy?: boolean;
+  sink?: (bytes: Buffer, info: { exportRunId: string; contentSha256: string }) => Promise<void>;
   /** Extra manifest fields describing where the document went (target and object key). */
   destination?: Record<string, unknown>;
 }
@@ -109,7 +111,7 @@ export class BackupService {
   ) {}
 
   async backup(ctx: RequestContext, options: BackupOptions = {}): Promise<BackupDocument> {
-    const { via = 'http', storeCopy = true, destination } = options;
+    const { via = 'http', sink, destination } = options;
     // A backup carries everything, including never-send-to-AI material: it needs a person with authority.
     requireCapability(ctx.actor, 'confirm');
     const ws = ctx.workspace.id;
@@ -166,8 +168,10 @@ export class BackupService {
     };
     const counts = countsOf(doc);
     const contentSha256 = sha256Hex(canonicalJson(doc));
-    const storageKey = storeCopy ? `backups/${exportRunId}.json` : null;
-    if (storageKey) await this.storage.put(storageKey, Buffer.from(JSON.stringify(doc), 'utf8'));
+    const bytes = Buffer.from(JSON.stringify(doc), 'utf8');
+    const storageKey = sink ? null : `backups/${exportRunId}.json`;
+    if (sink) await sink(bytes, { exportRunId, contentSha256 });
+    else await this.storage.put(storageKey!, bytes);
     try {
       await this.db.orm.transaction(async tx => {
         await tx.insert(exportRun).values({

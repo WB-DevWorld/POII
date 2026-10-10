@@ -88,9 +88,17 @@ export interface S3TargetOptions {
   region: string;
   /** Key prefix inside the bucket, e.g. `poii/`; may be empty. */
   prefix: string;
+  /**
+   * Per-request timeout in ms. Unset: 10 minutes for PutObject, 60 s for list, get and delete. Set (from
+   * POII_BACKUP_S3_TIMEOUT_MS): that value for every request.
+   */
+  timeoutMs?: number | null;
   fetch?: typeof fetch;
   now?: () => Date;
 }
+
+export const S3_PUT_TIMEOUT_MS = 10 * 60_000;
+export const S3_OTHER_TIMEOUT_MS = 60_000;
 
 function decodeXml(value: string): string {
   return value
@@ -150,7 +158,10 @@ export class S3Target implements BackupTarget {
   private async send(method: string, url: URL, body?: Uint8Array, headers: Record<string, string> = {}): Promise<Response> {
     const payloadSha256 = body ? sha256Hex(body) : EMPTY_SHA256;
     const signed = signV4({ method, url, headers, payloadSha256, date: this.now() }, this.credentials);
-    return this.fetchImpl(url, { method, headers: signed.headers, body: body ? Buffer.from(body) : undefined });
+    const timeoutMs = this.options.timeoutMs ?? (method === 'PUT' ? S3_PUT_TIMEOUT_MS : S3_OTHER_TIMEOUT_MS);
+    return this.fetchImpl(url, {
+      method, headers: signed.headers, body: body ? Buffer.from(body) : undefined, signal: AbortSignal.timeout(timeoutMs),
+    });
   }
 
   private async fail(operation: string, key: string, response: Response): Promise<never> {

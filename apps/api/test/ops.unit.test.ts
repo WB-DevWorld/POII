@@ -66,13 +66,13 @@ describe('SigV4 signing (mocked: AWS documentation vectors, no network)', () => 
   });
 });
 
-interface Seen { method: string; url: string; headers: Record<string, string>; body: Buffer | null }
+interface Seen { method: string; url: string; headers: Record<string, string>; body: Buffer | null; signal: AbortSignal | null }
 
 function fakeFetch(replies: Array<(req: Seen) => Response>) {
   const seen: Seen[] = [];
   const impl = (async (input: string | URL | Request, init?: RequestInit) => {
     const headers = Object.fromEntries(Object.entries((init?.headers ?? {}) as Record<string, string>));
-    const req: Seen = { method: init?.method ?? 'GET', url: String(input), headers, body: init?.body ? Buffer.from(init.body as Uint8Array) : null };
+    const req: Seen = { method: init?.method ?? 'GET', url: String(input), headers, body: init?.body ? Buffer.from(init.body as Uint8Array) : null, signal: init?.signal ?? null };
     seen.push(req);
     const reply = replies.shift();
     if (!reply) throw new Error(`unexpected request ${req.method} ${req.url}`);
@@ -104,6 +104,7 @@ describe('S3 target (mocked: fake fetch, no real bucket)', () => {
     assert.equal(req.headers['content-type'], 'application/json');
     assert.match(req.headers.authorization!, /^AWS4-HMAC-SHA256 Credential=TESTKEY\/20261010\/eu-central\/s3\/aws4_request, SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date, Signature=[0-9a-f]{64}$/);
     assert.deepEqual(req.body, body);
+    assert.ok(req.signal instanceof AbortSignal && !req.signal.aborted, 'every request carries a timeout signal');
     // The signature is reproducible from the request as sent.
     const again = signV4({
       method: 'PUT', url: new URL(req.url), headers: { 'content-type': 'application/json' }, payloadSha256: req.headers['x-amz-content-sha256']!, date: now(),
@@ -129,6 +130,19 @@ describe('S3 target (mocked: fake fetch, no real bucket)', () => {
     assert.equal(seen[1]!.url, 'https://objects.example.test/backups?list-type=2&prefix=poii%2F&continuation-token=tok%2Ben%2F%3D%3D');
     assert.equal(seen[1]!.headers['x-amz-content-sha256'], EMPTY_SHA256);
     assert.deepEqual(parseListObjectsV2('<ListBucketResult><IsTruncated>false</IsTruncated></ListBucketResult>'), { objects: [], nextToken: null });
+  });
+
+  test('requests time out: a hanging endpoint aborts after the configured timeout', async () => {
+    const hang = (async (_input: string | URL | Request, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(init.signal!.reason));
+    })) as typeof fetch;
+    const target = new S3Target({
+      endpoint: 'https://objects.example.test', bucket: 'backups', accessKeyId: 'TESTKEY', secretAccessKey: 'test-secret-not-real',
+      region: 'eu-central', prefix: 'poii/', fetch: hang, timeoutMs: 50,
+    });
+    const started = Date.now();
+    await assert.rejects(target.list(), (error: Error) => error.name === 'TimeoutError');
+    assert.ok(Date.now() - started < 5000);
   });
 
   test('DeleteObject and GetObject; errors name the S3 code but never the secret', async () => {
@@ -170,6 +184,9 @@ describe('backup naming, retention selection and settings', () => {
       { key: 'latest.json', size: 1, lastModified: null }, { key: 'notes.txt', size: 1, lastModified: null }];
     assert.deepEqual(selectForDeletion(objects, 2), [at('2026-10-01T00:00:00Z').key, at('2026-10-02T00:00:00Z').key], 'oldest first');
     assert.deepEqual(selectForDeletion(objects, 30), []);
+    // The document a run just wrote is never deleted, even if its name sorts as older (clock skew).
+    const justWritten = at('2026-10-02T00:00:00Z').key;
+    assert.deepEqual(selectForDeletion(objects, 2, justWritten), [at('2026-10-01T00:00:00Z').key]);
   });
 
   test('backup settings: local by default, s3 needs every credential, keep is at least 1', () => {
@@ -183,6 +200,11 @@ describe('backup naming, retention selection and settings', () => {
       POII_BACKUP_S3_SECRET_KEY: 's', POII_BACKUP_KEEP: '7', POII_BACKUP_S3_PREFIX: 'team/poii',
     });
     assert.equal(s3.keep, 7);
-    assert.deepEqual(s3.s3, { endpoint: 'https://x', bucket: 'b', accessKeyId: 'k', secretAccessKey: 's', region: 'us-east-1', prefix: 'team/poii/' });
+    assert.deepEqual(s3.s3, {
+      endpoint: 'https://x', bucket: 'b', accessKeyId: 'k', secretAccessKey: 's', region: 'us-east-1', prefix: 'team/poii/', timeoutMs: null,
+    });
+    const base = { POII_BACKUP_TARGET: 's3', POII_BACKUP_S3_ENDPOINT: 'https://x', POII_BACKUP_S3_BUCKET: 'b', POII_BACKUP_S3_ACCESS_KEY: 'k', POII_BACKUP_S3_SECRET_KEY: 's' };
+    assert.equal(backupSettings({ ...base, POII_BACKUP_S3_TIMEOUT_MS: '120000' }).s3!.timeoutMs, 120000);
+    assert.throws(() => backupSettings({ ...base, POII_BACKUP_S3_TIMEOUT_MS: 'soon' }), /POII_BACKUP_S3_TIMEOUT_MS/);
   });
 });

@@ -15,7 +15,9 @@ Optional belt-and-braces, not enabled: a nightly `pg_dump -Fc` of the `poii` dat
 Each backup run produces, at the target:
 
 - `poii-backup-<workspaceId>-<time>.json`: the document. `<time>` is the ISO 8601 UTC start time with `:` and `.` replaced by `-` (valid on every filesystem; sorts by time), e.g. `poii-backup-0199…-2026-10-10T03-15-00-123Z.json`.
-- `latest.json`: a pointer (`format: "poii.backup-pointer"`) naming the newest document with its byte length, SHA-256 and row counts. The counts are the manifest a restore is checked against.
+- `latest.json`: a pointer (`format: "poii.backup-pointer"`) naming the newest document with its byte length, two hashes and row counts. The counts are the manifest a restore is checked against. `sha256` is the SHA-256 of the file's bytes as written (check a download against it); `contentSha256` is the SHA-256 of the document's canonical JSON, the value stored in `export_run.content_sha256` and the `workspace.backup` audit event (it does not depend on whitespace or key order).
+
+The runner backs up the install's only workspace; if there is none, or more than one, the run fails and says so. The document is uploaded before its export run and audit event are committed, so a failed upload leaves no history claiming a backup happened (and if that commit fails, the uploaded object is removed again).
 
 Each run also writes one row to `ops_backup_run` (start, finish, target, object key, byte length, SHA-256, status `running`/`succeeded`/`failed`, error), records a `workspace.backup` audit event (`via: backup-cli`) and an `export_run` whose manifest names the target and object key. `GET /health/version` shows the last run as `backup: { lastRunAt, lastTarget, lastStatus }`. Readiness never depends on it.
 
@@ -30,9 +32,10 @@ Each run also writes one row to `ops_backup_run` (start, finish, target, object 
 | `POII_BACKUP_S3_BUCKET` | Bucket name. |
 | `POII_BACKUP_S3_ACCESS_KEY`, `POII_BACKUP_S3_SECRET_KEY` | Credentials. Secrets: Dokploy environment only, never in the repository. |
 | `POII_BACKUP_S3_REGION` | Signing region (default `us-east-1`; many S3-compatible services accept any value, some need theirs). |
+| `POII_BACKUP_S3_TIMEOUT_MS` | Per-request timeout in milliseconds for every S3 request (at least 1000). Unset: 10 minutes for the upload, 60 s for list, get and delete. |
 | `POII_BACKUP_S3_PREFIX` | Key prefix inside the bucket (default `poii/`), so a shared bucket stays tidy. Retention only ever deletes `poii-backup-*.json` objects directly under this prefix. |
 
-The runner also reads what the API reads: `DATABASE_URL` and `POII_STORAGE_LOCAL_DIR` (the originals). S3 requests are signed with AWS Signature Version 4 using `node:crypto` and `fetch`; there is no SDK. The runner needs outbound HTTPS to the endpoint.
+The runner also reads `DATABASE_URL` (plus whatever the database connection needs, as for the API) and `POII_STORAGE_ADAPTER`/`POII_STORAGE_LOCAL_DIR` (the originals). It builds only the storage adapter, not the identity adapter, so it needs no web URL, session or token settings. S3 requests are signed with AWS Signature Version 4 using `node:crypto` and `fetch`; there is no SDK. The runner needs outbound HTTPS to the endpoint.
 
 ## 3. Run a backup locally
 
@@ -43,7 +46,7 @@ set -a; . ./.env; set +a
 pnpm --filter @poii/api backup:run
 ```
 
-It prints one JSON line per step (`backup.started`, `backup.written` with size, SHA-256 and counts, `backup.pruned` if retention deleted anything, `backup.finished`) and exits 1 if anything failed. With the `.env.example` defaults the files land in `apps/api/artifacts/backups/` (gitignored).
+It prints one JSON line per step (`backup.started`, `backup.written` with size, SHA-256 and counts, `backup.pruned` if retention deleted anything, `backup.finished`; the document a run has just written is never pruned) and exits 1 if anything failed. With the `.env.example` defaults the files land in `apps/api/artifacts/backups/` (gitignored).
 
 From a built image or `dist`: `node dist/backup-cli.js` in `apps/api` (the container's working directory).
 
@@ -81,12 +84,12 @@ What it does, start to finish, on fresh databases it creates and drops itself (`
 2. Loads the three public fixtures through the API, with a small history: two assistant statements (one confirmed, one rejected), a decision that is superseded by a confirmed successor, a requirement, an observation and a price decision.
 3. Takes a backup with the backup runner into a temporary local directory.
 4. Creates and migrates a second, empty database and starts a second API on another random port.
-5. Posts the document named by `latest.json` to `/v1/restore` and checks: the document's size and SHA-256 match the pointer; the restore response's counts equal the pointer's counts; the same counts again straight from the restored database; the known successor decision resolves to its exact span (text and excerpt hash); it keeps its approval and antecedent; it is current and its predecessor is not; `/health/ready` answers `ready`.
+5. Posts the document named by `latest.json` to `/v1/restore` and checks: the document's size, file SHA-256 and canonical-JSON SHA-256 match the pointer; the restore response's counts equal the pointer's counts; the same counts again straight from the restored database; the known successor decision resolves to its exact span (text and excerpt hash); it keeps its approval and antecedent; it is current and its predecessor is not; `/health/ready` answers `ready`.
 6. Stops both APIs, drops both databases, prints `RESTORE DRILL PASSED in <seconds> s`.
 
 **Passing means** a backup taken by the same runner the schedule uses restores into an empty install with every row, the original bytes, history and approvals intact, and the restored install serves the journey. Any mismatch prints the failed check and exits non-zero; the API logs are printed on failure.
 
-Measured on 2026-10-10 on a developer machine (Windows, PostgreSQL 17 in Docker): 18.2 s end to end. CI runs the same script after the tests.
+Measured on 2026-10-10 on a developer machine (Windows, PostgreSQL 17 in Docker): 15 to 18 s end to end. Proposed for CI (step in the PR description); until that step is merged, CI does not run it.
 
 This proves the format and the runner locally. It does not prove the staging backup target, the Dokploy schedule or a restore of a real staging backup: that is the pre-activation drill in `rollback-and-restore.md` §3.
 

@@ -11,7 +11,16 @@
 set -euo pipefail
 
 : "${TEST_DATABASE_URL:?TEST_DATABASE_URL is required (a PostgreSQL role allowed to create databases)}"
-started_ms=$(date +%s%3N)
+# Milliseconds since the epoch: bash 5's EPOCHREALTIME when present (decimal point or comma), else Node.
+now_ms() {
+  if [ -n "${EPOCHREALTIME:-}" ]; then
+    local t=${EPOCHREALTIME/[.,]/}
+    echo $(( 10#$t / 1000 ))
+  else
+    node -e 'process.stdout.write(String(Date.now()))'
+  fi
+}
+started_ms=$(now_ms)
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 api_dir="$root/apps/api"
 work=$(mktemp -d "${TMPDIR:-/tmp}/poii-drill.XXXXXX")
@@ -20,7 +29,7 @@ src_db="poii_drill_${suffix}_src"
 dst_db="poii_drill_${suffix}_dst"
 pids=()
 
-step() { printf '[drill %6ss] %s\n' "$(( ($(date +%s%3N) - started_ms) / 1000 ))" "$*"; }
+step() { printf '[drill %6ss] %s\n' "$(( ($(now_ms) - started_ms) / 1000 ))" "$*"; }
 tool() { (cd "$api_dir" && node --import tsx src/ops/drill.ts "$@"); }
 
 cleanup() {
@@ -32,9 +41,12 @@ cleanup() {
       [ -f "$log" ] && { echo "--- last lines of $(basename "$log")"; tail -n 30 "$log"; }
     done
   fi
-  tool drop-db "$src_db" "$dst_db" || echo "WARNING: could not drop $src_db / $dst_db; drop them by hand"
+  if ! tool drop-db "$src_db" "$dst_db"; then
+    echo "ERROR: could not drop $src_db / $dst_db; drop them by hand"
+    [ "$status" -eq 0 ] && status=1
+  fi
   rm -rf "$work"
-  local elapsed_ms=$(( $(date +%s%3N) - started_ms ))
+  local elapsed_ms=$(( $(now_ms) - started_ms ))
   if [ "$status" -eq 0 ]; then
     echo "RESTORE DRILL PASSED in $((elapsed_ms / 1000)).$(printf '%03d' $((elapsed_ms % 1000))) s"
   else

@@ -30,13 +30,16 @@ export function parseBackupName(name: string): { workspaceId: string; time: stri
   return match ? { workspaceId: match[1]!, time: match[2]! } : null;
 }
 
-/** Backup documents beyond the newest `keep`, oldest first. Never touches latest.json or unrelated objects. */
-export function selectForDeletion(objects: BackupObject[], keep: number): string[] {
+/**
+ * Backup documents beyond the newest `keep`, oldest first. Never touches latest.json, unrelated objects or `protect`
+ * (the document this run just wrote, even if a clock skew made older-looking names sort after it).
+ */
+export function selectForDeletion(objects: BackupObject[], keep: number, protect?: string): string[] {
   const backups = objects
     .map(o => ({ key: o.key, parsed: parseBackupName(o.key) }))
     .filter((o): o is { key: string; parsed: { workspaceId: string; time: string } } => o.parsed !== null)
     .sort((a, b) => (a.parsed.time < b.parsed.time ? 1 : a.parsed.time > b.parsed.time ? -1 : a.key < b.key ? 1 : -1));
-  return backups.slice(keep).map(o => o.key).reverse();
+  return backups.slice(keep).map(o => o.key).filter(key => key !== protect).reverse();
 }
 
 export interface BackupPointer {
@@ -46,7 +49,10 @@ export interface BackupPointer {
   workspaceId: string;
   generatedAt: string;
   byteLength: number;
+  /** SHA-256 of the written bytes of the file (what to check a download against). */
   sha256: string;
+  /** SHA-256 of canonicalJson(doc): the value in export_run.content_sha256 and the workspace.backup audit event. */
+  contentSha256: string;
   backupFormat: typeof BACKUP_FORMAT;
   backupFormatVersion: typeof BACKUP_VERSION;
   /** Row counts of the document: the manifest a restore is checked against. */
@@ -77,12 +83,15 @@ export interface RunBackupDeps {
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error)).slice(0, 2000);
 
 /**
- * The workspace a scheduled backup covers and the person it acts as: the oldest workspace (release one has exactly
- * one) and its owner. Read from the database, not the identity port, so it works without a request or session.
+ * The workspace a scheduled backup covers and the person it acts as: the install's only workspace (release one has
+ * exactly one; anything else fails the run rather than silently picking one) and its owner. Read from the database,
+ * not the identity port, so it works without a request or session.
  */
 export async function backupContext(db: Db, runId: string): Promise<RequestContext> {
-  const ws = (await db.orm.select().from(workspace).orderBy(asc(workspace.createdAt), asc(workspace.id)).limit(1))[0];
-  if (!ws) throw new Error('Nothing to back up: this install has no workspace yet');
+  const all = await db.orm.select().from(workspace).orderBy(asc(workspace.createdAt), asc(workspace.id)).limit(2);
+  if (all.length === 0) throw new Error('Nothing to back up: this install has no workspace yet');
+  if (all.length > 1) throw new Error('This install holds more than one workspace; the backup runner backs up exactly one and refuses to guess');
+  const ws = all[0]!;
   const owner = (await db.orm.select().from(actor)
     .where(and(eq(actor.workspaceId, ws.id), eq(actor.kind, 'person'), eq(actor.authority, 'owner'), isNull(actor.revokedAt)))
     .orderBy(asc(actor.createdAt), asc(actor.id)).limit(1))[0];
@@ -105,17 +114,32 @@ export async function runBackup(deps: RunBackupDeps): Promise<BackupRunResult> {
     const ctx = await backupContext(deps.db, runId);
     workspaceId = ctx.workspace.id;
     const key = backupObjectName(ctx.workspace.id, startedAt);
-    const doc: BackupDocument = await deps.backupService.backup(ctx, {
-      via: 'backup-cli', storeCopy: false, destination: { target: deps.target.name, objectKey: key, backupRunId: runId },
-    });
+    // The document goes to the target inside backup(), before its export run and audit event are committed: if the
+    // upload fails nothing claims a backup happened; if the commit fails the uploaded object is removed again.
+    const written: { bytes?: Buffer; contentSha256?: string } = {};
+    let doc: BackupDocument;
+    try {
+      doc = await deps.backupService.backup(ctx, {
+        via: 'backup-cli', destination: { target: deps.target.name, objectKey: key, backupRunId: runId },
+        sink: async (bytes, info) => {
+          await deps.target.put(key, bytes, 'application/json');
+          written.bytes = bytes;
+          written.contentSha256 = info.contentSha256;
+        },
+      });
+    } catch (error) {
+      if (written.bytes) await deps.target.delete(key).catch(() => undefined);
+      throw error;
+    }
     exportRunId = doc.exportRunId ?? null;
-    const bytes = Buffer.from(JSON.stringify(doc), 'utf8');
+    const bytes = written.bytes!;
+    const contentSha256 = written.contentSha256!;
     const sha256 = sha256Hex(bytes);
-    await deps.target.put(key, bytes, 'application/json');
     objectKey = key;
     const pointer: BackupPointer = {
       format: POINTER_FORMAT, formatVersion: 1, objectKey: key, workspaceId: ctx.workspace.id, generatedAt: doc.generatedAt,
-      byteLength: bytes.byteLength, sha256, backupFormat: BACKUP_FORMAT, backupFormatVersion: BACKUP_VERSION, counts: countsOf(doc),
+      byteLength: bytes.byteLength, sha256, contentSha256, backupFormat: BACKUP_FORMAT, backupFormatVersion: BACKUP_VERSION,
+      counts: countsOf(doc),
     };
     await deps.target.put(LATEST_POINTER, Buffer.from(`${JSON.stringify(pointer, null, 2)}\n`, 'utf8'), 'application/json');
     log({ event: 'backup.written', runId, objectKey: key, byteLength: bytes.byteLength, sha256, counts: pointer.counts });
@@ -123,7 +147,7 @@ export async function runBackup(deps: RunBackupDeps): Promise<BackupRunResult> {
     let deleted: string[] = [];
     let retentionError: string | null = null;
     try {
-      deleted = selectForDeletion(await deps.target.list(), deps.keep);
+      deleted = selectForDeletion(await deps.target.list(), deps.keep, key);
       for (const name of deleted) await deps.target.delete(name);
       if (deleted.length) log({ event: 'backup.pruned', runId, keep: deps.keep, deleted });
     } catch (error) {

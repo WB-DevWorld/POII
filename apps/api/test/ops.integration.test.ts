@@ -88,6 +88,7 @@ describe('backup runner, retention and /health/version (integration, fresh datab
     assert.equal(pointer.workspaceId, doc.workspace.id);
     assert.equal(pointer.byteLength, bytes.byteLength);
     assert.equal(pointer.sha256, createHash('sha256').update(bytes).digest('hex'));
+    assert.match(pointer.contentSha256, /^[0-9a-f]{64}$/);
     assert.equal(pointer.counts.sources, 1);
     assert.equal(pointer.counts.revisions, 1);
     assert.equal(pointer.counts.auditEvents, doc.auditEvents.length);
@@ -110,6 +111,7 @@ describe('backup runner, retention and /health/version (integration, fresh datab
     const run = (await api1!.db.orm.select().from(exportRun)).find(r => r.id === doc.exportRunId)!;
     assert.equal(run.kind, 'backup');
     assert.equal(run.storageKey, null);
+    assert.equal(run.contentSha256, pointer.contentSha256, 'pointer carries the canonical-JSON hash of the export run too');
     assert.deepEqual((run.manifest as { destination: unknown }).destination, { target: 'local', objectKey: result.objectKey, backupRunId: result.runId });
     assert.equal(existsSync(join(api1!.storageDir, 'backups')), false);
 
@@ -146,6 +148,19 @@ describe('backup runner, retention and /health/version (integration, fresh datab
     assert.equal(restored.status, 200, JSON.stringify(restored.body));
     assert.deepEqual(RestoreResponse.parse(restored.body).restored, pointer.counts);
     assert.equal((await c2.get('/v1/me')).body.workspace.id, pointer.workspaceId);
+
+    // More than one workspace: the runner refuses to guess and records the failure.
+    const extra = '0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b';
+    await api2!.db.pool.query(`INSERT INTO workspace (id, name) VALUES ($1, 'second')`, [extra]);
+    try {
+      const two = await backupMain(env(api2!, db2!.url), quiet);
+      assert.equal(two.status, 'failed');
+      assert.match(two.error!, /more than one workspace/);
+      const row = (await api2!.db.orm.select().from(opsBackupRun)).find(r => r.id === two.runId)!;
+      assert.equal(row.status, 'failed');
+    } finally {
+      await api2!.db.pool.query('DELETE FROM workspace WHERE id = $1', [extra]);
+    }
   });
 
   test('a failed run is recorded and reported, and readiness ignores it', async () => {
@@ -154,7 +169,12 @@ describe('backup runner, retention and /health/version (integration, fresh datab
       put: async () => { throw new Error('disk full (simulated)'); },
     };
     const backupService = api1!.app.get(BackupService);
+    const history = async () => (await api1!.db.pool.query<{ n: number }>(
+      `SELECT (SELECT count(*) FROM export_run WHERE kind = 'backup')::int + (SELECT count(*) FROM audit_event WHERE action = 'workspace.backup')::int AS n`,
+    )).rows[0]!.n;
+    const historyBefore = await history();
     const result = await runBackup({ db: api1!.db, backupService, target: broken, keep: 30 });
+    assert.equal(await history(), historyBefore, 'a failed upload leaves no export run or audit event claiming a backup');
     assert.equal(result.status, 'failed');
     assert.equal(result.error, 'disk full (simulated)');
     const row = (await api1!.db.orm.select().from(opsBackupRun)).find(r => r.id === result.runId)!;

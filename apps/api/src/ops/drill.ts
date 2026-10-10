@@ -15,6 +15,7 @@ import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
+import { canonicalJson } from '../common/util.js';
 import type { BackupPointer } from './backup-runner.js';
 
 const DRILL_DB = /^poii_drill_[a-z0-9_]{1,40}$/;
@@ -152,6 +153,7 @@ async function verify(base: string, backupDir: string, stateFile: string, url: s
   same(sha256(bytes), pointer.sha256, 'document SHA-256');
   const doc = JSON.parse(bytes.toString('utf8')) as Record<string, unknown> & { format: string; formatVersion: number };
   same([doc.format, doc.formatVersion], ['poii.backup', 1], 'document format');
+  same(sha256(canonicalJson(doc)), pointer.contentSha256, 'document canonical-JSON SHA-256 (export_run.content_sha256)');
 
   const restored = await expect(base, 'POST', '/v1/restore', 200, { backup: doc });
   same(restored.workspaceId, pointer.workspaceId, 'restored workspace id');
