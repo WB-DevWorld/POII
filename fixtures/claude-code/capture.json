@@ -1,0 +1,8 @@
+{
+  "enabled": true,
+  "events": ["Stop"],
+  "capture": ["prompts", "answers"],
+  "redact": ["LNT-[0-9]{6}"],
+  "aiAllowed": false,
+  "envFile": ".poii/capture.env.local"
+}
