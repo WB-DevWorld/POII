@@ -48,12 +48,15 @@ jobs:
           EVENT: ${{ github.event_name }}
           REF: ${{ github.ref }}
           INPUT_SHA: ${{ inputs.source_sha }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
           TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           set -euo pipefail
           note() { echo "$1" | tee -a "$GITHUB_STEP_SUMMARY"; }
           echo "## Deploy staging" >> "$GITHUB_STEP_SUMMARY"
-          if [ "${ENABLED:-}" != "true" ]; then
+          if [ "$EVENT" = workflow_dispatch ] && [ "${INPUT_DRY_RUN:-}" = true ]; then
+            note "Dry run: Dokploy is only read, never changed (allowed while deploys are switched off)."
+          elif [ "${ENABLED:-}" != "true" ]; then
             note "Staging deploys are switched off: the repository variable \`POII_STAGING_ENABLED\` is not \`true\`. Nothing was deployed. See docs/runbooks/staging-deploy.md."
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             exit 0
