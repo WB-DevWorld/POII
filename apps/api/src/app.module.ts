@@ -15,6 +15,8 @@ import { BackupController } from './modules/backup/backup.controller.js';
 import { BackupService } from './modules/backup/backup.service.js';
 import { ExportsController } from './modules/exports/exports.controller.js';
 import { ExportsService } from './modules/exports/exports.service.js';
+import { AgentInstructionsController } from './modules/exports/agent-instructions.controller.js'; // #19
+import { AgentInstructionsService } from './modules/exports/agent-instructions.service.js'; // #19
 import { IdentityController } from './modules/identity/identity.controller.js';
 import { IdentityService } from './modules/identity/identity.service.js';
 import { RecordsController } from './modules/records/records.controller.js';
@@ -80,6 +82,7 @@ export function createApp(settings: Settings, db: Db = createDb(settings.databas
       HealthController, IdentityController, SourcesController, RecordsController, ViewsController, SearchController,
       ExportsController, BackupController,
       AiController, // #13 AI
+      AgentInstructionsController, // #19
       ...AUTH_CONTROLLERS, // #14 auth and tokens
     ],
     providers: [
@@ -92,6 +95,7 @@ export function createApp(settings: Settings, db: Db = createDb(settings.databas
       { provide: APP_INTERCEPTOR, useClass: ContextInterceptor },
       IdentityService, SourcesService, RecordsService, ViewsService, SearchService, ExportsService, BackupService,
       AiService, // #13 AI
+      AgentInstructionsService, // #19
       ...AUTH_PROVIDERS, // #14 auth and tokens
     ],
   })
