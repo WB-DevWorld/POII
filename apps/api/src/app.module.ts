@@ -54,6 +54,8 @@ export function signInAdapter(ports: Ports): BetterAuthIdentity | undefined {
 const AUTH_CONTROLLERS = [TokensController];
 const AUTH_PROVIDERS = [TokensService];
 // end #14 auth and tokens
+import { ImportsController } from './modules/imports/imports.controller.js'; // #20
+import { ImportsService } from './modules/imports/imports.service.js'; // #20
 
 export { DB, SETTINGS };
 
@@ -81,6 +83,7 @@ export function createApp(settings: Settings, db: Db = createDb(settings.databas
       ExportsController, BackupController,
       AiController, // #13 AI
       ...AUTH_CONTROLLERS, // #14 auth and tokens
+      ImportsController, // #20
     ],
     providers: [
       { provide: SETTINGS, useValue: settings },
@@ -93,6 +96,7 @@ export function createApp(settings: Settings, db: Db = createDb(settings.databas
       IdentityService, SourcesService, RecordsService, ViewsService, SearchService, ExportsService, BackupService,
       AiService, // #13 AI
       ...AUTH_PROVIDERS, // #14 auth and tokens
+      ImportsService, // #20
     ],
   })
   class AppModule implements NestModule {
