@@ -1,9 +1,11 @@
-import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, HttpCode, Inject, Param, Patch, Post, Query } from '@nestjs/common';
 import {
   ConfirmRecordRequest, CreateRecordRequest, EvidenceInput, ListRecordsQuery, RejectRecordRequest, SetStatusRequest,
   SupersedeRecordRequest, UpdateRecordRequest,
   type RecordDetail, type RecordSummary,
+  AI_CONTEXT_HEADER, type WithheldRecord, // #18
 } from '@poii/contracts';
+import { aiContextRequested } from '../../ai/disclosure.js';
 import { requireCapability } from '../../authorization/authorization.js';
 import { parseId } from '../../common/params.js';
 import { Ctx, type RequestContext } from '../../common/request-context.js';
@@ -21,15 +23,15 @@ export class RecordsController {
   }
 
   @Get()
-  list(@Ctx() ctx: RequestContext, @Query() query: unknown): Promise<RecordSummary[]> {
+  list(@Ctx() ctx: RequestContext, @Query() query: unknown, @Headers(AI_CONTEXT_HEADER) aiContext?: string): Promise<Array<RecordSummary | WithheldRecord>> {
     requireCapability(ctx.actor, 'read');
-    return this.records.list(ctx, parse(ListRecordsQuery, query));
+    return this.records.list(ctx, parse(ListRecordsQuery, query), aiContextRequested(aiContext));
   }
 
   @Get(':id')
-  get(@Ctx() ctx: RequestContext, @Param('id') id: string): Promise<RecordDetail> {
+  get(@Ctx() ctx: RequestContext, @Param('id') id: string, @Headers(AI_CONTEXT_HEADER) aiContext?: string): Promise<RecordDetail | WithheldRecord> {
     requireCapability(ctx.actor, 'read');
-    return this.records.get(ctx, parseId(id));
+    return this.records.get(ctx, parseId(id), aiContextRequested(aiContext));
   }
 
   @Patch(':id')

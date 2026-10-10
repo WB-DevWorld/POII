@@ -579,3 +579,68 @@ export type TokenView = z.infer<typeof TokenView>;
 /** The only response that ever contains the secret. */
 export const CreatedTokenResponse = z.object({ token: TokenView, secret: z.string() });
 export type CreatedTokenResponse = z.infer<typeof CreatedTokenResponse>;
+
+// #18 read-only API and MCP ----------------------------------------------------------------------------
+// External read clients (docs/api.md, "Read-only API for external clients"). A client that is itself an AI
+// (an MCP server, Claude, ChatGPT, Cursor) sends `X-POII-AI-Context: 1`; the read endpoints then apply the
+// never-send-to-AI rule of ADR-0007: never-send sources answer 409 ai_not_allowed or are left out of lists,
+// and records derived from them carry their title and ids only.
+
+/** Request header. `1` marks the caller as an AI context; absent or `0` means it is not. Anything else is 400. */
+export const AI_CONTEXT_HEADER = 'x-poii-ai-context';
+/** Response header on an AI-context list: how many items were left out as never-send-to-AI material. */
+export const WITHHELD_HEADER = 'x-poii-withheld';
+export const WITHHELD_REASON = 'never_send_to_ai';
+
+/** What an AI-context read shows of a record derived from a never-send source: its title and ids, nothing else. */
+export const WithheldRecord = z.object({
+  id: Id,
+  kind: RecordKind,
+  title: z.string(),
+  supersedesRecordId: Id.nullable(),
+  supersededByRecordId: Id.nullable(),
+  contentWithheld: z.literal(true),
+  reason: z.literal(WITHHELD_REASON),
+});
+export type WithheldRecord = z.infer<typeof WithheldRecord>;
+
+/** `GET /v1/records`, `GET /v1/sources/:id/records` in AI context. */
+export const AiRecordSummary = z.union([WithheldRecord, RecordSummary]);
+export type AiRecordSummary = z.infer<typeof AiRecordSummary>;
+/** `GET /v1/records/:id` in AI context (version snapshots are empty objects there). */
+export const AiRecordDetail = z.union([WithheldRecord, RecordDetail]);
+export type AiRecordDetail = z.infer<typeof AiRecordDetail>;
+
+export const WithheldCurrentDecision = z.object({ record: WithheldRecord, contentWithheld: z.literal(true) });
+export type WithheldCurrentDecision = z.infer<typeof WithheldCurrentDecision>;
+/** `GET /v1/decisions/current` in AI context. */
+export const AiCurrentDecision = z.union([WithheldCurrentDecision, CurrentDecision]);
+export type AiCurrentDecision = z.infer<typeof AiCurrentDecision>;
+
+/** Largest span `GET /v1/sources/:id/revisions/:revisionId/span` returns. */
+export const MAX_SPAN_CHARS = 200_000;
+export const SourceSpanQuery = z.object({
+  startChar: z.coerce.number().int().min(0),
+  endChar: z.coerce.number().int().min(1),
+});
+export type SourceSpanQuery = z.infer<typeof SourceSpanQuery>;
+
+/** One span of one revision, with the locator fields a citation needs. Offsets are UTF-16 code units. */
+export const SourceSpanView = z.object({
+  sourceId: Id,
+  sourceTitle: z.string(),
+  revisionId: Id,
+  revisionNo: z.number().int().positive(),
+  /** False when a newer revision of the source exists. */
+  isCurrentRevision: z.boolean(),
+  revisionContentSha256: z.string(),
+  startChar: z.number().int().nonnegative(),
+  endChar: z.number().int().positive(),
+  startLine: z.number().int().positive(),
+  endLine: z.number().int().positive(),
+  text: z.string(),
+  /** sha256 of `text`; equals a locator's excerptSha256 for the same span. */
+  textSha256: z.string(),
+});
+export type SourceSpanView = z.infer<typeof SourceSpanView>;
+// end #18 read-only API and MCP ------------------------------------------------------------------------
