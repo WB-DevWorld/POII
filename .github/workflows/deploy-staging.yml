@@ -65,8 +65,8 @@ jobs:
             [ "$REF" = refs/heads/main ] || { note "Manual deploys run from main only (got $REF)."; exit 1; }
             [[ "$INPUT_SHA" =~ ^[0-9a-f]{40}$ ]] || { note "source_sha must be a full 40-character lowercase hex SHA."; exit 1; }
             artifact="$(gh api "repos/$REPO/actions/artifacts?name=poii-release-$INPUT_SHA&per_page=100" \
-              --jq '[.artifacts[] | select(.expired | not)] | sort_by(.created_at) | last // empty')"
-            [ -n "$artifact" ] || { note "No unexpired artifact \`poii-release-$INPUT_SHA\` exists (published only for main commits, kept 90 days)."; exit 1; }
+              --jq "[.artifacts[] | select((.expired | not) and .workflow_run.head_branch == \"main\" and .workflow_run.head_sha == \"$INPUT_SHA\")] | sort_by(.created_at) | last // empty")"
+            [ -n "$artifact" ] || { note "No unexpired artifact \`poii-release-$INPUT_SHA\` from a main run for that SHA exists (published only for main commits, kept 90 days)."; exit 1; }
             run_id="$(jq -r '.workflow_run.id' <<<"$artifact")"
             sha="$INPUT_SHA"
           else
@@ -84,9 +84,13 @@ jobs:
           fi
           run="$(gh api "repos/$REPO/actions/runs/$run_id")"
           path="$(jq -r '.path' <<<"$run")"; conclusion="$(jq -r '.conclusion' <<<"$run")"; branch="$(jq -r '.head_branch' <<<"$run")"
-          head_repo="$(jq -r '.head_repository.full_name' <<<"$run")"
+          head_repo="$(jq -r '.head_repository.full_name' <<<"$run")"; run_sha="$(jq -r '.head_sha' <<<"$run")"
           if [ "$path" != .github/workflows/publish.yml ] || [ "$conclusion" != success ] || [ "$branch" != main ] || [ "$head_repo" != "$REPO" ]; then
             note "Run $run_id is not a successful main run of the publish workflow in this repository (path $path, conclusion $conclusion, branch $branch)."
+            exit 1
+          fi
+          if [ "$run_sha" != "$sha" ]; then
+            note "Publish run $run_id ran for \`$run_sha\` but its release artifact names \`$sha\`; refusing to guess. This can happen when main moved on between CI and publish; the next main commit's publish run deploys normally."
             exit 1
           fi
           note "Source \`$sha\` from publish run [$run_id](https://github.com/$REPO/actions/runs/$run_id)."

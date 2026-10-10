@@ -26,7 +26,6 @@ const IMAGE_PATTERNS = {
   GIT_SHA: /^[0-9a-f]{40}$/,
 };
 const REQUEST_TIMEOUT_MS = 30_000;
-const POLL_INTERVAL_MS = Number(process.env.DEPLOY_POLL_INTERVAL_MS ?? 10_000);
 const IN_ACTIONS = process.env.GITHUB_ACTIONS === 'true';
 
 class DeployError extends Error {}
@@ -39,12 +38,23 @@ function log(message) {
   console.log(message);
 }
 
-function mask(value) {
-  if (!IN_ACTIONS || typeof value !== 'string') return;
-  for (const line of value.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (trimmed.length >= 4) console.log(`::add-mask::${trimmed}`);
-  }
+const SENSITIVE_KEY = /SECRET|PASSWORD|KEY|TOKEN/i;
+const HARMLESS_VALUE = /^(?:true|false|local|off|on|\d{1,5})$/i;
+
+/**
+ * Decides whether a Dokploy environment value is hidden from the logs. Values of keys that look
+ * sensitive are masked from 4 characters; other values from 8 characters, except harmless flags
+ * and short numbers, so masking does not blank out every "true" or port number in the log.
+ */
+export function shouldMask(key, value) {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (SENSITIVE_KEY.test(key)) return trimmed.length >= 4;
+  return trimmed.length >= 8 && !HARMLESS_VALUE.test(trimmed);
+}
+
+function maskEnvValue(key, value) {
+  if (IN_ACTIONS && shouldMask(key, value)) console.log(`::add-mask::${value.trim()}`);
 }
 
 function setOutput(name, value) {
@@ -74,6 +84,8 @@ function readConfig(env) {
   const apiBase = `${base.origin}${base.pathname.replace(/\/+$/, '').replace(/\/api$/, '')}/api`;
   const timeoutSeconds = Number(env.DEPLOY_TIMEOUT_SECONDS ?? 1200);
   if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) fail('DEPLOY_TIMEOUT_SECONDS must be a positive number');
+  const pollIntervalMs = Number(env.DEPLOY_POLL_INTERVAL_MS ?? 10_000);
+  if (!Number.isFinite(pollIntervalMs) || pollIntervalMs <= 0) fail('DEPLOY_POLL_INTERVAL_MS must be a positive number');
   return {
     apiBase,
     token: env.DOKPLOY_TOKEN,
@@ -81,6 +93,7 @@ function readConfig(env) {
     target: Object.fromEntries(MANAGED_KEYS.map(key => [key, env[key]])),
     title: env.DEPLOY_TITLE || `POII staging ${env.GIT_SHA.slice(0, 12)}`,
     timeoutMs: timeoutSeconds * 1000,
+    pollIntervalMs,
     dryRun: env.DOKPLOY_DRY_RUN === 'true',
   };
 }
@@ -172,6 +185,27 @@ function requireCompose(data, composeId) {
   return data;
 }
 
+// Timestamps and run states move on their own (e.g. a previous deployment finishing); everything else must not.
+const TIMESTAMP_KEY = /(?:At|Date|Time|^status|Status)$/;
+
+function withoutTimestamps(value) {
+  if (Array.isArray(value)) return value.map(withoutTimestamps);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value)
+    .filter(([key]) => !TIMESTAMP_KEY.test(key))
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, inner]) => [key, withoutTimestamps(inner)]));
+}
+
+/** Names of the fields, other than env, timestamp-like and status fields, that differ between two compose.one results. */
+export function changedComposeFields(before, after) {
+  const keys = new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})]);
+  return [...keys]
+    .filter(key => key !== 'env' && !TIMESTAMP_KEY.test(key))
+    .filter(key => JSON.stringify(withoutTimestamps(before?.[key])) !== JSON.stringify(withoutTimestamps(after?.[key])))
+    .sort();
+}
+
 function requireDeployments(data) {
   if (!Array.isArray(data) || data.some(d => !d || typeof d.deploymentId !== 'string' || typeof d.status !== 'string')) {
     fail('Dokploy deployment.allByCompose returned an unexpected shape; the API may have changed, see the runbook');
@@ -191,7 +225,7 @@ export async function main(env = process.env) {
   // Mask every value in the service environment before anything else can echo it.
   for (const line of currentEnv.split(/\r?\n/)) {
     const parsed = parseEnvLine(line);
-    if (parsed && !MANAGED_KEYS.includes(parsed.key)) mask(parsed.value);
+    if (parsed && !MANAGED_KEYS.includes(parsed.key)) maskEnvValue(parsed.key, parsed.value);
   }
   if (compose.isolatedDeployment === true) log('::warning::Isolated Deployment is on for this Compose service; compose.dokploy.yaml expects it off');
   if (compose.autoDeploy === true) log('::warning::Dokploy autodeploy is on; pushes to the configured branch also redeploy staging outside this workflow');
@@ -228,6 +262,8 @@ export async function main(env = process.env) {
   await call(cfg, 'compose.update', { method: 'POST', body: { composeId: cfg.composeId, env: nextEnv } });
   const after = requireCompose(await call(cfg, 'compose.one', { query: { composeId: cfg.composeId } }), cfg.composeId);
   if ((after.env ?? '') !== nextEnv) fail('Dokploy did not store the environment exactly as sent; stopping before deploy');
+  const changed = changedComposeFields(compose, after);
+  if (changed.length) fail(`compose.update changed fields other than env (${changed.join(', ')}); stopping before deploy`);
 
   log(`Triggering compose.deploy with title "${cfg.title}"`);
   const triggered = await call(cfg, 'compose.deploy', { method: 'POST', body: { composeId: cfg.composeId, title: cfg.title } });
@@ -236,12 +272,25 @@ export async function main(env = process.env) {
 
   let deployment;
   let lastStatus = '';
+  let newSeen = 0;
+  let adoptionWarned = false;
   while (true) {
     const list = requireDeployments(await call(cfg, 'deployment.allByCompose', { query: { composeId: cfg.composeId } }));
-    const ours = list
-      .filter(d => !knownIds.has(d.deploymentId) && d.title === cfg.title)
-      .sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')));
+    const fresh = list.filter(d => !knownIds.has(d.deploymentId));
+    newSeen = fresh.length;
+    const ours = fresh.filter(d => d.title === cfg.title);
+    if (ours.length > 1) fail(`Dokploy lists ${ours.length} new deployments titled "${cfg.title}"; stopping rather than guessing which is ours`);
     deployment = ours[0];
+    if (!deployment && fresh.length > 1) {
+      fail(`Dokploy lists ${fresh.length} new deployments and none carries our title; stopping rather than guessing which is ours`);
+    }
+    if (!deployment && fresh.length === 1) {
+      deployment = fresh[0];
+      if (!adoptionWarned) {
+        log('::warning::Dokploy did not echo our title; tracking the single new deployment');
+        adoptionWarned = true;
+      }
+    }
     const status = deployment?.status ?? 'not started';
     if (status !== lastStatus) {
       log(`Dokploy deployment: ${status}`);
@@ -258,9 +307,9 @@ export async function main(env = process.env) {
     }
     if (Date.now() - triggeredAt > cfg.timeoutMs) {
       setOutput('deployment_status', deployment?.status ?? 'not-started');
-      fail(`Timed out after ${Math.round(cfg.timeoutMs / 1000)} s waiting for the Dokploy deployment (last status: ${status}). It was NOT cancelled and may still finish; check Dokploy`);
+      fail(`Timed out after ${Math.round(cfg.timeoutMs / 1000)} s waiting for the Dokploy deployment (last status: ${status}; new deployments seen: ${newSeen}). It was NOT cancelled and may still finish; check Dokploy`);
     }
-    await sleep(POLL_INTERVAL_MS);
+    await sleep(cfg.pollIntervalMs);
   }
   const deployedAt = new Date().toISOString();
   setOutput('deployment_status', 'done');
@@ -279,6 +328,6 @@ if (invokedDirectly) {
     } else {
       console.error(`::error::Unexpected failure: ${error?.name ?? 'Error'}: ${error?.message ?? ''}`);
     }
-    process.exit(1);
+    process.exitCode = 1;
   });
 }

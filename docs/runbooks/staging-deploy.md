@@ -20,9 +20,9 @@ Nothing. The workflow starts after every successful `Publish immutable images` r
 5. `infra/scripts/dokploy-deploy.mjs`:
    1. reads the Compose service (`compose.one`) and masks every value of its environment except the three it manages;
    2. replaces exactly `API_IMAGE`, `WEB_IMAGE` and `GIT_SHA` in the environment, keeping every other line byte for byte (a managed key defined twice stops the run; a missing one is appended);
-   3. writes it back (`compose.update`), reads it again and requires it to be stored exactly as sent;
+   3. writes it back (`compose.update`), reads the service again and requires `env` to be stored exactly as sent and every other field (except timestamps and status) to be unchanged;
    4. starts a deployment (`compose.deploy`) with a unique title `POII staging <sha> run <run id>.<attempt>`;
-   5. polls `deployment.allByCompose` for the new deployment with that title until it is `done` (success), `error` or `cancelled` (failure), with a 20-minute limit. On timeout it fails **without cancelling** anything in Dokploy: a running migration is never cancelled.
+   5. polls `deployment.allByCompose` for the new deployment with that title (or, with a warning, the single new deployment if Dokploy did not keep the title) until it is `done` (success), `error` or `cancelled` (failure), with a 20-minute limit. On timeout it fails **without cancelling** anything in Dokploy: a running migration is never cancelled.
    The previous `API_IMAGE`, `WEB_IMAGE` and `GIT_SHA` are printed and kept as step outputs for the failure summary.
 6. `staging-smoke.sh wait`: polls `GET <API health base>/health/ready` every 10 s until it answers 200 with `status: ready` and `version` equal to the SHA; hard limit 10 minutes.
 7. `staging-smoke.sh check`: `/health/live` 200 `ok` with the SHA, `/health/ready` 200 `ready` with the SHA, the web root answers 200, an unknown path answers 404. The Playwright core-journey smoke is **skipped with a printed reason**: no sign-in method is approved for staging yet (local-owner is loopback-only unless `POII_ALLOW_LOCAL_OWNER_REMOTE` is set deliberately; local sign-in is #14). The hook is `run_core_journey_smoke` in the script, switched by the staging variable `POII_STAGING_E2E_AUTH`; setting it today fails the smoke on purpose, because `apps/web/playwright.config.ts` can only start local servers.
@@ -42,9 +42,9 @@ These extend [owner setup §5](owner-setup.md#5-dokploy-on-the-existing-hetzner-
 2. **Environment** of the Compose service: `POSTGRES_PASSWORD`, `POII_SESSION_SECRET`, `WEB_BASE_URL=https://<staging host>`, and initial `API_IMAGE`, `WEB_IMAGE`, `GIT_SHA` (any published pair, e.g. from the latest publish run summary). The workflow only ever changes those last three.
 3. **Domains** (Compose service → Domains):
    - `<staging host>`, path `/`, service `web`, container port `3000`, HTTPS (Let's Encrypt).
-   - `<staging host>`, path `/health`, service `api`, container port `3001`, HTTPS, **strip path off**. Dokploy turns this into the Traefik rule ``Host(`<staging host>`) && PathPrefix(`/health`)``, which outranks the plain host rule because Traefik prefers longer rules. Only the API's `/health/live` and `/health/ready` become reachable from outside; the rest of the API stays internal. The web app has no `/health` route, so nothing is shadowed.
+   - `<staging host>`, path `/health`, service `api`, container port `3001`, HTTPS, **Strip Path: disabled** (the API expects the `/health` prefix). Dokploy turns this into the Traefik rule ``Host(`<staging host>`) && PathPrefix(`/health`)``, which outranks the plain host rule because Traefik prefers longer rules. Only the API's `/health/live` and `/health/ready` become reachable from outside; the rest of the API stays internal. The web app has no `/health` route, so nothing is shadowed.
    - Alternative, not recommended: a separate API hostname with path `/`. It would publish the whole API, which today has no authentication of its own. If chosen anyway, set the staging variable `STAGING_API_BASE_URL` to that origin.
-4. **API key.** Dokploy keys act as the user who generates them (profile → API/CLI). Generate it as a Dokploy member that can only see the POII project and may update services and create deployments (the routers check `service: create` for `compose.update` and `deployment: create` for `compose.deploy`). If Dokploy's member permissions cannot be narrowed that far on this installation, say so before using an admin key.
+4. **API key** (profile → API/CLI). Generate it as a Dokploy member that can only see the POII project and may read and update the Compose service and create deployments. Which permissions Dokploy actually checks, and whose rights a key carries, are listed with their sources and confidence under [Dokploy API used](#dokploy-api-used); confirm them when the key is created. If the member permissions cannot be narrowed that far on this installation, say so before using an admin key.
 5. **GHCR pull credentials** as in owner setup §5.4.
 6. **The compose id**: open the staging Compose service in the Dokploy panel; the id is the last segment of the page URL (or `composeId` in `GET /api/project.all`).
 
@@ -62,13 +62,14 @@ These extend [owner setup §5](owner-setup.md#5-dokploy-on-the-existing-hetzner-
 | `staging` environment variable | `STAGING_API_BASE_URL` | optional; only if the API health is not routed on the web host |
 | `staging` environment variable | `POII_STAGING_E2E_AUTH` | leave unset until a staging sign-in method is approved |
 
-The `staging` environment should stay limited to the `main` branch.
+The staging hostname is not a secret: it appears in the logs and summary of this public repository the first time the workflow runs (environment URL, smoke output).
 
 ### First switch-on
 
-1. Set the secrets and variables above, leave `POII_STAGING_ENABLED` unset.
-2. Actions → Deploy staging → Run workflow on `main` with the latest published SHA and `dry_run` ticked. Expect a green run whose summary lists the current and target values of the three variables.
-3. Set `POII_STAGING_ENABLED=true`, then either run it again without `dry_run` or wait for the next published `main` commit. From then on every published `main` commit deploys to staging.
+1. **Prerequisite: lock the `staging` environment to `main`.** Settings → Environments → `staging` → Deployment branches and tags → **Selected branches and tags**, with exactly one rule, `main`. No required reviewers (staging deploys are automatic). This is what keeps the Dokploy secrets away from other branches. The branch check inside the workflow is not a substitute: a workflow dispatched from another branch runs that branch's copy of the file, which could drop the check.
+2. Set the secrets and variables above, leave `POII_STAGING_ENABLED` unset.
+3. Actions → Deploy staging → Run workflow on `main` with the latest published SHA and `dry_run` ticked. Expect a green run whose summary lists the current and target values of the three variables. Confirm on the run page that the `deploy` job ran under the `staging` environment (it is listed as a deployment to `staging`); if it did not, the secrets were not available and the branch rule needs checking.
+4. Set `POII_STAGING_ENABLED=true`, then either run it again without `dry_run` or wait for the next published `main` commit. From then on every published `main` commit deploys to staging.
 
 ## After a successful deploy
 
@@ -103,12 +104,14 @@ All read on 2026-10-10. Base: `<DOKPLOY_URL>/api/<router>.<procedure>`; queries 
 | `GET /api/deployment.allByCompose?composeId=` | find our deployment and its status | [API reference: deployment](https://docs.dokploy.com/docs/api/reference-deployment); schema [deployment.ts](https://github.com/Dokploy/dokploy/blob/canary/packages/server/src/db/schema/deployment.ts) | medium: the docs show `{}`; the schema has `deploymentId`, `title`, `status` (`running`, `done`, `error`, `cancelled`), `createdAt`, `errorMessage` |
 | Domains with a path | route `/health` to the API | [utils/docker/domain.ts](https://github.com/Dokploy/dokploy/blob/canary/packages/server/src/utils/docker/domain.ts) builds ``Host(…) && PathPrefix(`<path>`)``; [API reference: domain](https://docs.dokploy.com/docs/api/reference-domain) lists `path`, `stripPath`, `serviceName`, `port` | medium-high (source, not prose docs) |
 | deploy runs `docker compose … up -d --build --remove-orphans` after writing `.env` beside the compose file | why changing `env` and deploying is enough | [utils/builders/compose.ts](https://github.com/Dokploy/dokploy/blob/canary/packages/server/src/utils/builders/compose.ts) | medium-high (source) |
+| permission checks | what the key's member needs | router source [compose.ts](https://github.com/Dokploy/dokploy/blob/canary/apps/dokploy/server/api/routers/compose.ts): `compose.one` checks service access `read`; `compose.update` checks `service: create`; `compose.deploy` checks `deployment: create` | medium (`canary` source, not docs; the installed version may differ). The check for `deployment.allByCompose` was not read: **unverified; confirm when the key is created** |
+| whose rights a key carries | scoping the key | [docs.dokploy.com/docs/api](https://docs.dokploy.com/docs/api): keys are generated per user profile; that a key acts with exactly that user's project access is inferred, not stated | **unverified; confirm when the key is created** (a dry run with the member's key shows it) |
 
 **Not clear from the documentation, handled by failing loudly:**
 
 - Response bodies are undocumented (`{}` in the reference). The script checks every field it uses (`composeId` matches, `env` is a string or null, the deployment list is an array of objects with string `deploymentId` and `status`) and stops otherwise.
-- Whether `compose.update` stores `env` verbatim (line endings, trailing newline). The script reads it back and stops before deploying if it differs.
-- How deployments are ordered in `deployment.allByCompose`. The script does not rely on order; it matches its own unique title among deployments that did not exist before the call.
+- Whether `compose.update` stores `env` verbatim (line endings, trailing newline) and touches nothing else. The script reads the service back and stops before deploying if `env` differs from what it sent, or if any other field differs from before the update ("compose.update changed fields other than env"); timestamps and status fields are ignored because they move on their own.
+- How deployments are ordered in `deployment.allByCompose`, and whether the `title` sent to `compose.deploy` is stored. The script does not rely on order; it matches its own unique title among deployments that did not exist before the call. If no new deployment carries the title but exactly one new deployment appeared, it tracks that one with a warning ("Dokploy did not echo our title"); more than one new deployment without a match stops the run. A timeout reports how many new deployments were seen.
 - Unknown deployment statuses stop the run instead of being treated as success.
 - `compose.deploy` re-fetches the configured Git source before `compose up`; `compose.redeploy` would not. `deploy` is used so a merged change to `compose.dokploy.yaml` reaches staging. The compose file therefore comes from the head of the configured branch at deploy time, not necessarily the exact source SHA; the window is small because compose changes are gated and deploys run one at a time.
 - The Dokploy source was read on its `canary` branch; the installed version may differ. Check with a dry run after any Dokploy upgrade.
