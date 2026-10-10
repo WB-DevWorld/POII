@@ -10,12 +10,13 @@ Only the owner can do these. Each step is short and exact. Keys go into the loca
 
 ## 2. Bot identity for agent PRs
 
-Choose one:
+Done on 10 Oct 2026. The GitHub App `wbdevworld-poii-agent` (App ID 5258365) is installed on `WB-DevWorld/POII` only (installation 169805354). Agents commit and open pull requests as `wbdevworld-poii-agent[bot]`, so the owner is never the author of what the owner approves.
 
-- **GitHub App (recommended).** Organization settings → Developer settings → GitHub Apps → New GitHub App. Name `poii-agent`, no webhook, permissions: Contents read/write, Pull requests read/write, Issues read/write, Workflows read/write, Metadata read. Install it on `WB-DevWorld/POII` only. Generate a private key, store it as repository secrets `POII_AGENT_APP_ID` and `POII_AGENT_APP_PRIVATE_KEY`.
-- **Alternative.** A separate machine-user account invited to the organization with write access to POII only, with a fine-grained PAT.
-
-Until this exists, agents commit through your account and gated items wait for your approval phrase in chat.
+- **Where the key lives.** The App's private key is a PEM file outside the repository on the owner's machine. Its path, the App ID and the installation ID are in the local `.env` as `POII_AGENT_PRIVATE_KEY_PATH`, `POII_AGENT_APP_ID` and `POII_AGENT_INSTALLATION_ID` (see `.env.example`). Never paste the key into chat, an issue or a PR.
+- **GitHub secrets.** Repository secrets `POII_AGENT_APP_ID` and `POII_AGENT_APP_PRIVATE_KEY` and the repository variable `POII_AGENT_INSTALLATION_ID` exist for workflows that need to act as the bot.
+- **How agents use it.** `scripts/agent-token.mjs` turns the key into a one-hour installation token. `GH_TOKEN=$(node scripts/agent-token.mjs) gh pr create ...` opens a PR as the bot; the repo-local git credential helper (see the script header) pushes as the bot. The checkout's git identity is `wbdevworld-poii-agent[bot] <340397344+wbdevworld-poii-agent[bot]@users.noreply.github.com>`.
+- **Permissions the App needs.** Contents read/write, Pull requests read/write, Issues read/write, Workflows read/write, Metadata read. Without Workflows the bot cannot push a change to `.github/workflows/`. When a permission is added to the App, accept it on the installation (Organization settings → Third-party access → GitHub Apps → the App → review the pending request).
+- **Gates that depend on it.** The `Protect main` ruleset requires code-owner review and the `production-gated` environment has prevent-self-review on, so the owner's approval is a real second identity. Rotating the key: generate a new one in the App settings, replace the PEM file and the `POII_AGENT_APP_PRIVATE_KEY` secret, delete the old key.
 
 ## 3. Anthropic Console
 
