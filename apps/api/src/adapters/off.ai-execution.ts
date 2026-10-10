@@ -20,6 +20,10 @@ export class OffAiExecution implements AiExecutionPort {
     throw aiDisabled();
   }
 
+  async getPreview(): Promise<AiPreview> {
+    throw aiDisabled();
+  }
+
   async execute(): Promise<AiExecution> {
     throw aiDisabled();
   }

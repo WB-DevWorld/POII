@@ -61,6 +61,12 @@ export class AiService {
     return { ...preview, expiresAt: iso(preview.expiresAt) };
   }
 
+  async getPreview(ctx: RequestContext, previewId: string): Promise<AiPreviewResponse> {
+    requireCapability(ctx.actor, 'read');
+    const preview = await this.ai.getPreview(ctx, previewId);
+    return { ...preview, expiresAt: iso(preview.expiresAt) };
+  }
+
   async execute(ctx: RequestContext, input: ExecuteInput): Promise<AiExecuteResponse> {
     requireAiExecute(ctx.actor);
     const result = await this.ai.execute(ctx, input.previewId);

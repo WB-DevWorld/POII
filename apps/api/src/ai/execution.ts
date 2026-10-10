@@ -133,7 +133,12 @@ export class GatedAiExecution implements AiExecutionPort {
     };
   }
 
-  async execute(ctx: RequestContext, previewId: string): Promise<AiExecution> {
+  /**
+   * Loads a preview for viewing or executing: it must exist, be unused and unexpired, match the current
+   * provider configuration, pass disclosure again (the source or a record may have been marked never-send
+   * since), and rebuild to exactly the previewed bytes (sha256).
+   */
+  private async loadPreview(ctx: RequestContext, previewId: string, purpose: 'view' | 'execute') {
     const preview = (await this.db.orm.select().from(aiPreview)
       .where(and(eq(aiPreview.id, previewId), eq(aiPreview.workspaceId, ctx.workspace.id))))[0];
     if (!preview) throw notFound('Preview');
@@ -144,9 +149,6 @@ export class GatedAiExecution implements AiExecutionPort {
     if (!reg || reg.model !== preview.model) {
       throw conflict('preview_stale', 'The provider or model configuration changed since the preview; create a new preview');
     }
-
-    // Disclosure again (the source or a record may have been marked never-send since), then prove the
-    // prompt about to be sent is byte for byte the previewed one.
     let material: DisclosedMaterial;
     try {
       material = await discloseForAi(this.db.orm, {
@@ -155,7 +157,7 @@ export class GatedAiExecution implements AiExecutionPort {
       }, this.settings.ai.maxInputChars);
     } catch (error) {
       if (error instanceof AppError && error.code === 'ai_not_allowed') {
-        await audit(this.db.orm, ctx, 'ai.execute_refused', 'source', preview.sourceId, {
+        await audit(this.db.orm, ctx, purpose === 'execute' ? 'ai.execute_refused' : 'ai.preview_refused', 'source', preview.sourceId, {
           previewId, reason: 'ai_not_allowed', ...(error.details as Record<string, unknown>),
         });
       }
@@ -165,6 +167,24 @@ export class GatedAiExecution implements AiExecutionPort {
     if (sha256Hex(promptText) !== preview.promptSha256) {
       throw conflict('preview_stale', 'The previewed material changed since the preview (a context record was edited); create a new preview');
     }
+    return { preview, provider, reg, material, promptText };
+  }
+
+  /** The stored preview again, with its exact text rebuilt and verified. Sends nothing. */
+  async getPreview(ctx: RequestContext, previewId: string): Promise<AiPreview> {
+    const { preview, provider, reg, promptText } = await this.loadPreview(ctx, previewId, 'view');
+    const cap = usageRow(provider, reg.capMicro, await monthTotals(this.db.orm, provider, currentMonth(this.now())));
+    return {
+      previewId, provider, model: preview.model, promptText, promptSha256: preview.promptSha256, sourceId: preview.sourceId,
+      revisionId: preview.revisionId, startChar: preview.startChar, endChar: preview.endChar, recordIds: preview.recordIds,
+      inputTokensEstimate: preview.inputTokensEstimate, maxOutputTokens: preview.maxOutputTokens,
+      estimatedCostUsd: microToUsd(preview.estimatedCostMicroUsd), remainingCapUsd: cap.remainingUsd, monthlyCapUsd: cap.capUsd,
+      expiresAt: preview.expiresAt,
+    };
+  }
+
+  async execute(ctx: RequestContext, previewId: string): Promise<AiExecution> {
+    const { preview, provider, reg, material, promptText } = await this.loadPreview(ctx, previewId, 'execute');
 
     const usageId = newId();
     const month = currentMonth(this.now());

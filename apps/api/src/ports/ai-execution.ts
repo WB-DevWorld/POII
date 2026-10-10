@@ -114,6 +114,8 @@ export interface AiExecutionPort {
   status(): AiStatusInfo;
   usage(): Promise<AiUsageInfo>;
   preview(ctx: RequestContext, request: AiPreviewRequest): Promise<AiPreview>;
+  /** A stored, unused, unexpired preview with its text rebuilt and verified. Sends nothing. */
+  getPreview(ctx: RequestContext, previewId: string): Promise<AiPreview>;
   execute(ctx: RequestContext, previewId: string): Promise<AiExecution>;
 }
 

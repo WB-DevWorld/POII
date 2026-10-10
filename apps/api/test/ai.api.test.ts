@@ -108,6 +108,9 @@ describe('AI-assisted extraction (integration, MOCKED provider responses)', { sk
     const previewAudit = await auditDetails('ai.previewed');
     assert.ok(previewAudit.includes(pv.promptSha256), 'audit keeps the prompt hash');
     assert.ok(!previewAudit.includes('Lanternfish'), 'audit keeps no prompt text by default');
+    const reread = AiPreviewResponse.parse((await c.get(`/v1/ai/previews/${pv.previewId}`)).body);
+    assert.equal(reread.promptText, pv.promptText, 'the stored preview rebuilds to the same bytes');
+    assert.equal(stub.calls.length, 0);
 
     stub.enqueue(recorded('anthropic.messages.ok.json'));
     const before = stub.calls.length;
@@ -202,6 +205,7 @@ describe('AI-assisted extraction (integration, MOCKED provider responses)', { sk
     const later = await paste(`Flip ${run}`, `Flip probe ${run}: Decision: ship on Friday.`);
     const pv = AiPreviewResponse.parse((await preview({ sourceId: later.id })).body);
     assert.equal((await c.patch(`/v1/sources/${later.id}`, { aiAllowed: false })).status, 200);
+    assert.equal((await c.get(`/v1/ai/previews/${pv.previewId}`)).body.error, 'ai_not_allowed', 'the preview text is no longer shown either');
     const ex = await c.post('/v1/ai/execute', { previewId: pv.previewId });
     assert.equal(ex.status, 409);
     assert.equal(ex.body.error, 'ai_not_allowed');
@@ -368,7 +372,10 @@ describe('AI off (integration)', { skip: skipIntegration }, () => {
 
   test('every AI endpoint answers 503 ai_disabled; the manual path is unaffected', async () => {
     const c = client(api.base);
-    for (const [method, path] of [['get', '/v1/ai/status'], ['get', '/v1/ai/usage'], ['post', '/v1/ai/preview'], ['post', '/v1/ai/execute']] as const) {
+    for (const [method, path] of [
+      ['get', '/v1/ai/status'], ['get', '/v1/ai/usage'], ['post', '/v1/ai/preview'], ['get', '/v1/ai/previews/01900000-0000-7000-8000-000000000000'],
+      ['post', '/v1/ai/execute'],
+    ] as const) {
       const r = method === 'get' ? await c.get(path) : await c.post(path, { sourceId: '01900000-0000-7000-8000-000000000000', previewId: '01900000-0000-7000-8000-000000000000' });
       assert.equal(r.status, 503, `${method} ${path}`);
       assert.equal(r.body.error, 'ai_disabled');
