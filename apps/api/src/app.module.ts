@@ -28,6 +28,11 @@ import { ViewsService } from './modules/views/views.service.js';
 import type { AiExecutionPort } from './ports/ai-execution.js';
 import type { IdentityPort } from './ports/identity.js';
 import type { StoragePort } from './ports/storage.js';
+// #13 AI
+import { createAiExecution } from './ai/factory.js';
+import { AiController } from './modules/ai/ai.controller.js';
+import { AiService } from './modules/ai/ai.service.js';
+// end #13 AI
 
 export { DB, SETTINGS };
 
@@ -44,7 +49,7 @@ export function createPorts(settings: Settings, db: Db): Ports {
   return {
     identity: new LocalOwnerIdentity(db, settings),
     storage: new LocalFsStorage(settings.storageLocalDir),
-    ai: new OffAiExecution(),
+    ai: settings.aiEnabled ? createAiExecution(settings, db) : new OffAiExecution(), // #13 AI
   };
 }
 
@@ -53,6 +58,7 @@ export function createApp(settings: Settings, db: Db = createDb(settings.databas
     controllers: [
       HealthController, IdentityController, SourcesController, RecordsController, ViewsController, SearchController,
       ExportsController, BackupController,
+      AiController, // #13 AI
     ],
     providers: [
       { provide: SETTINGS, useValue: settings },
@@ -63,6 +69,7 @@ export function createApp(settings: Settings, db: Db = createDb(settings.databas
       { provide: APP_FILTER, useClass: ApiExceptionFilter },
       { provide: APP_INTERCEPTOR, useClass: ContextInterceptor },
       IdentityService, SourcesService, RecordsService, ViewsService, SearchService, ExportsService, BackupService,
+      AiService, // #13 AI
     ],
   })
   class AppModule implements NestModule {

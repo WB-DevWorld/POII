@@ -149,6 +149,12 @@ export default async function SourcePage({ params, searchParams }: { params: Par
       {source.archivedAt ? (
         <p className="notice warn">This source is archived. Unarchive it before citing it in new candidates.</p>
       ) : null}
+      {/* #13 AI */}
+      <p className="hint">
+        <a href={`/sources/${source.id}/ai${span ? `?start=${span.start}&end=${span.end}` : ''}`} data-testid="ai-link">
+          AI-assisted extraction{source.aiAllowed ? '' : ' (unavailable: never send to AI)'}
+        </a>
+      </p>
       <CandidateForm
         action={createRecordAction}
         sourceId={source.id}

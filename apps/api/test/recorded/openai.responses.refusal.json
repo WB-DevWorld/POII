@@ -1,0 +1,31 @@
+{
+  "_mocked": "MOCKED: hand-written, not captured from a live provider (no API keys exist yet). Shape follows the provider documentation read on 2026-10-10. Offsets refer to fixtures/decision-chain.md. Refusal content part.",
+  "status": 200,
+  "body": {
+    "id": "resp_mocked_02",
+    "object": "response",
+    "status": "completed",
+    "error": null,
+    "incomplete_details": null,
+    "model": "gpt-6.1-sol",
+    "output": [
+      {
+        "id": "msg_mocked_r",
+        "type": "message",
+        "status": "completed",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "refusal",
+            "refusal": "I cannot help with that."
+          }
+        ]
+      }
+    ],
+    "usage": {
+      "input_tokens": 1702,
+      "output_tokens": 12,
+      "total_tokens": 1714
+    }
+  }
+}

@@ -11,8 +11,11 @@ import { DB, IDENTITY_PORT } from './tokens.js';
 import { canonicalJson, sha256Hex } from './util.js';
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-/** Restore is idempotent by itself and replaces the workspace; backups are too large to keep as replies. */
-const NOT_IDEMPOTENT_BY_KEY = new Set(['/v1/restore', '/v1/backup']);
+/**
+ * Restore is idempotent by itself and replaces the workspace; backups are too large to keep as replies.
+ * AI previews carry source text in their reply and must never be stored as a replay (#13 AI).
+ */
+const NOT_IDEMPOTENT_BY_KEY = new Set(['/v1/restore', '/v1/backup', '/v1/ai/preview']);
 
 /**
  * For every /v1 request: resolves the actor and workspace through the identity port, then applies
@@ -39,7 +42,7 @@ export class ContextInterceptor implements NestInterceptor {
 
     const method = req.method.toUpperCase();
     const key = headerValue(req, 'idempotency-key');
-    if (key === undefined || !MUTATING.has(method) || NOT_IDEMPOTENT_BY_KEY.has(path)) return next.handle();
+    if (key === undefined || !MUTATING.has(method) || NOT_IDEMPOTENT_BY_KEY.has(path.replace(/\/+$/, '').toLowerCase())) return next.handle();
     if (!key || key.length > 200) throw badRequest('invalid_idempotency_key', 'Idempotency-Key must be 1 to 200 characters');
 
     const workspaceId = resolved.workspace.id;

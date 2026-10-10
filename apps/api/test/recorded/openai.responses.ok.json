@@ -1,0 +1,47 @@
+{
+  "_mocked": "MOCKED: hand-written, not captured from a live provider (no API keys exist yet). Shape follows the provider documentation read on 2026-10-10. Offsets refer to fixtures/decision-chain.md.",
+  "status": 200,
+  "body": {
+    "id": "resp_mocked_01",
+    "object": "response",
+    "created_at": 1791590000,
+    "status": "completed",
+    "error": null,
+    "incomplete_details": null,
+    "model": "gpt-6.1-sol",
+    "output": [
+      {
+        "id": "rs_mocked",
+        "type": "reasoning",
+        "content": [],
+        "summary": []
+      },
+      {
+        "id": "msg_mocked",
+        "type": "message",
+        "status": "completed",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "annotations": [],
+            "logprobs": [],
+            "text": "{\"candidates\":[{\"kind\":\"decision\",\"title\":\"Lanternfish uses BullMQ on the existing Redis for release one\",\"body\":\"Stated by Mara on 2026-03-04; to be revisited if cross-language consumers appear.\",\"quote\":\"Decision: Lanternfish uses BullMQ on the existing Redis for release one.\",\"startChar\":782,\"endChar\":854},{\"kind\":\"decision\",\"title\":\"Lanternfish moves to NATS JetStream for order routing from release two\",\"body\":\"Replaces the BullMQ decision of 4 March.\",\"quote\":\"Decision: Lanternfish moves to NATS JetStream for order routing from release two.\",\"startChar\":1009,\"endChar\":1090}]}"
+          }
+        ]
+      }
+    ],
+    "store": false,
+    "usage": {
+      "input_tokens": 1702,
+      "input_tokens_details": {
+        "cached_tokens": 0
+      },
+      "output_tokens": 980,
+      "output_tokens_details": {
+        "reasoning_tokens": 640
+      },
+      "total_tokens": 2682
+    }
+  }
+}

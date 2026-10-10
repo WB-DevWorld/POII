@@ -53,8 +53,8 @@ test('staleness: observed within 30 days, stale after, unknown when never observ
 test('AI execution port: the off adapter refuses with ai_disabled', async () => {
   const off = new OffAiExecution();
   assert.equal(off.enabled, false);
-  await assert.rejects(off.extractCandidates({ workspaceId: 'w', sourceId: 's', revisionId: 'r', previewId: 'p' }),
-    (e: unknown) => e instanceof AppError && e.code === 'ai_disabled');
+  await assert.rejects(off.preview(), (e: unknown) => e instanceof AppError && e.code === 'ai_disabled' && e.status === 503);
+  await assert.rejects(off.execute(), (e: unknown) => e instanceof AppError && e.code === 'ai_disabled');
 });
 
 test('local-owner adapter only accepts a loopback web origin', () => {
