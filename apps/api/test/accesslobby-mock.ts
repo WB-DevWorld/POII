@@ -180,7 +180,9 @@ export async function startMockAccessLobby(options: { clientId: string; redirect
       }
       return json(res, 404, { error: 'not_found' });
     } catch (error) {
-      return json(res, 500, { error: String(error) });
+      // The mock logs the failure for the test run; the response carries no error text or stack.
+      console.error('[mock accesslobby]', error instanceof Error ? error.message : String(error));
+      return json(res, 500, { error: 'mock_failure' });
     }
   });
 
