@@ -28,7 +28,7 @@ Principles that are not negotiable in the code:
 | Decision | Applied in this baseline |
 | --- | --- |
 | ND-1 Release one | The complete manual workflow (works with AI and peers off) plus optional AI-assisted candidate extraction. Release-one exclusions and the three acceptance fixtures are kept (§3, §8). |
-| ND-2 Identity | Identity port from day one. Adapters: local/standalone (Better Auth evaluated first) and AccessLobby OIDC (Authorization Code + PKCE; store issuer, sub, person.id; explicit linking with proof of both accounts; no email merge; no automatic fallback during an outage; "this app / all apps" sign-out). Scoped, expiring, revocable owner tokens that read and propose but never confirm. ADR-0004. |
+| ND-2 Identity | Identity port from day one. Adapters: local/standalone (Better Auth, chosen after the evaluation recorded in ADR-0009) and AccessLobby OIDC (Authorization Code + PKCE; store issuer, sub, person.id; explicit linking with proof of both accounts; no email merge; no automatic fallback during an outage; "this app / all apps" sign-out). Scoped, expiring, revocable owner tokens that read and propose but never confirm. ADR-0004. |
 | ND-3 Ownership | One writable master per record. Git: POII code, specs, ADRs. POII database: decisions, evidence, notes recorded in POII. Other systems: their own records. Views, indexes, context packs: rebuildable. KnowledgeMesh is absorbed into POII. MindMesh keeps its own ordinary memories and runs without POII; POII runs without MindMesh; shared records move only by explicit copy or promotion with origin, version, conflict and deletion rules. ADR-0001. |
 | ND-4 Delivery | GHCR images identified by digest, Dokploy on existing Hetzner capacity, separate POII database, staging first, existing backup target, restore drill. Manual refresh and staleness labels in release one. Repository public; no LICENSE file for now (all rights reserved until the owner decides). Routine releases follow continuous deployment (docs/release-policy.md). ADR-0006. |
 | ND-5 Delegation | Next.js PWA, NestJS modular monolith, PostgreSQL, Drizzle as the one ORM/migration tool, pnpm, Docker, object-storage port (local/S3 now), Redis/BullMQ only when needed. No Payload, no Supabase. The builder decides UI/UX and routine engineering and records material choices as short ADRs. Escalation to the owner only for gated classes and the first production activation. ADR-0002, ADR-0003. |
@@ -94,7 +94,7 @@ Invariants enforced in the API and covered by tests:
 
 | Port | Release-one adapters | Later |
 | --- | --- | --- |
-| Identity | `local-owner` (single owner, development and standalone); local sign-in (Better Auth if it passes evaluation) | AccessLobby OIDC with explicit linking; AccessLobby machine identities |
+| Identity | `local-owner` (single owner, development and standalone); local sign-in on Better Auth (ADR-0009) | AccessLobby OIDC with explicit linking; AccessLobby machine identities |
 | Storage (originals and backups) | Local filesystem; S3-compatible | DonLoft |
 | AI execution | Anthropic API; OpenAI API; `off` (manual only) | MindMesh routing |
 | Search | PostgreSQL full-text | Vectors, rebuildable from sources |
