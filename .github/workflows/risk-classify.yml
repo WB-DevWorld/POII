@@ -12,7 +12,9 @@ permissions:
   # To re-run this workflow's earlier, failed run on the same head once the approval exists (see below).
   actions: write
 concurrency:
-  group: risk-${{ github.event.pull_request.number }}
+  # One group per PR and event: a review-triggered run must not cancel the run from the push (a cancelled
+  # required check blocks the merge and cannot be re-run by the review run).
+  group: risk-${{ github.event.pull_request.number }}-${{ github.event_name }}
   cancel-in-progress: true
 jobs:
   classify:
@@ -137,10 +139,13 @@ jobs:
                 // failed, no approval yet) still blocks the merge after this review-triggered run passes. Re-run
                 // the failed jobs of those earlier runs; they re-read the reviews and pass now.
                 if (context.eventName === 'pull_request_review') {
-                  const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
-                    owner, repo, workflow_id: 'risk-classify.yml', head_sha: pr.head.sha, event: 'pull_request', status: 'failure', per_page: 100,
-                  });
-                  for (const run of runs) {
+                  const stale = [];
+                  for (const status of ['failure', 'cancelled']) {
+                    stale.push(...await github.paginate(github.rest.actions.listWorkflowRuns, {
+                      owner, repo, workflow_id: 'risk-classify.yml', head_sha: pr.head.sha, event: 'pull_request', status, per_page: 100,
+                    }));
+                  }
+                  for (const run of stale) {
                     await github.rest.actions.reRunWorkflowFailedJobs({ owner, repo, run_id: run.id });
                     summary += `- re-running the earlier failed classify run ${run.id} on this head so the required check reflects the approval\n`;
                   }
