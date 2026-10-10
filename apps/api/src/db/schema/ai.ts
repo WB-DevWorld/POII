@@ -1,4 +1,4 @@
-// #13 AI tables (ADR-0007). Changing this file is a gated change. Migration: drizzle/0003_ai_usage.sql.
+// #13 AI tables (ADR-0007). Changing this file is a gated change. Migration: drizzle/0002_ai_usage.sql.
 // Previews keep no prompt text: execute rebuilds the prompt from the immutable revision and refuses unless
 // its sha256 equals the previewed one. Usage rows are the cap ledger and survive source deletion.
 import { sql } from 'drizzle-orm';
