@@ -41,6 +41,14 @@ services:
       # ADR-0004: local-owner refuses a non-loopback WEB_BASE_URL unless the owner sets this deliberately per environment.
       POII_ALLOW_LOCAL_OWNER_REMOTE: ${POII_ALLOW_LOCAL_OWNER_REMOTE:-false}
       POII_SESSION_SECRET: ${POII_SESSION_SECRET:?}
+      # Local sign-in (ADR-0009): the owner's sign-in user is created at API start while none exists; remove the
+      # bootstrap password from the environment after the first sign-in. The API sits behind the web container only,
+      # so the browser address comes from X-Forwarded-For (trust proxy on). Better Auth's own base URL is the API's
+      # internal origin unless set otherwise.
+      POII_OWNER_BOOTSTRAP_PASSWORD: ${POII_OWNER_BOOTSTRAP_PASSWORD:-}
+      POII_OWNER_LOGIN: ${POII_OWNER_LOGIN:-owner}
+      POII_API_BASE_URL: ${POII_API_BASE_URL:-http://api:3001}
+      POII_TRUST_PROXY: ${POII_TRUST_PROXY:-true}
       POII_STORAGE_ADAPTER: ${POII_STORAGE_ADAPTER:-local}
       POII_STORAGE_LOCAL_DIR: /data/storage
       POII_AI_ENABLED: ${POII_AI_ENABLED:-false}
