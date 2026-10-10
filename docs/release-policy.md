@@ -39,36 +39,32 @@ Gated changes go through the `production-gated` GitHub environment with the owne
 - Labels can raise the risk class (`risk:gated`), never lower it. A PR that touches a gated path is gated whatever its labels say.
 - A PR that cannot be classified is gated.
 
-## What is enforced today (10 October 2026)
+## What is enforced today (10 October 2026, after the bot switch-over)
 
 Enforced by GitHub or CI:
 
 - PRs are required for `main`; squash only; linear history; no bypass actors; required checks `verify`, `classify`, `dependency-review`, `analyze`.
+- Agents commit and open PRs as the GitHub App identity `wbdevworld-poii-agent[bot]` (installed on this repository only), never through the owner's account, so an approval by the owner on GitHub approves someone else's PR. `scripts/agent-token.mjs` mints the bot's token; see `docs/runbooks/owner-setup.md` section 2.
+- The `Protect main` ruleset requires code-owner review. `CODEOWNERS` names the owner (`@wbdevworld`) for the release policy, workflows, classifier, scripts, ADRs, baseline, ownership, schema, migrations, Compose and `infra/`; a PR that touches those paths cannot merge until the owner approves it on GitHub.
+- The `production-gated` environment has the owner as required reviewer with prevent-self-review on.
 - `classify` labels every PR `risk:gated` or `risk:routine` and enables auto-merge only for routine PRs.
 - The coverage check fails `verify` when a sensitive file is not gated.
 - Secret scanning with push protection, gitleaks over the full history, dependency review, CodeQL.
-- `production-gated` requires the owner's review before a deployment job runs (no deployment workflow exists yet).
 
-Not enforced today, held only by the rule and the record:
+Still held by the rule and the record, not by a setting:
 
-- Agents commit and open PRs through the owner's account, because no bot identity exists yet. Nothing technical stops a gated PR from being merged by that account; the `classify` check passes for gated PRs (it reports and labels, it does not block). The gate is the owner's phrase in chat, quoted in `CURRENT-WORK.md`, and the rule that agents never merge a gated PR without it.
-- `CODEOWNERS` names the owner (`@wbdevworld`), but the ruleset does not yet require code-owner review, so it has no effect on merging. It is in place so the switch-over below is a settings change, not a code change.
-- `production-gated` does not yet prevent self-review, because the agent and the reviewer are the same account.
+- A gated PR that touches no code-owner path (for example only application code in a gated class) is blocked by nothing technical once CI is green; `classify` reports and labels, it does not fail. The gate is the owner's phrase in chat, quoted in `CURRENT-WORK.md`, and the rule that agents never merge a gated PR without it.
+- Routine PRs auto-merge with zero approving reviews by design (`required_approving_review_count` is 0); code-owner review applies only to the protected paths.
 
-## What switches on once the bot identity exists
+## Possible next step
 
-Prepared in `docs/runbooks/bot-identity-switchover.md` and `infra/github/`; applied by the owner, not by an agent:
-
-1. Agents commit and open PRs as the bot (GitHub App installation token).
-2. The `main` ruleset requires one approving review from a code owner, with last-push approval, so a bot PR touching protected files cannot merge until the owner approves it on GitHub.
-3. `production-gated` gets prevent-self-review, so the bot cannot approve its own deployments.
-4. Optionally afterwards, `classify` is changed to fail on gated PRs until the owner's GitHub review exists, making the chat phrase a record rather than the only gate.
+Change `classify` to fail on gated PRs until an approving review by the owner exists on the PR, so the chat phrase becomes a record and the GitHub review the technical gate for every gated class. Separate gated PR, not started.
 
 ## Rules that keep it safe
 
 - Deploys run one at a time. A running migration is never cancelled. The previous digest is kept for one-step rollback. Rolling back the app and restoring the database are separate procedures with separate runbooks.
 - Agents never read, print or hold production credentials. Deploy credentials live in GitHub environments and in Dokploy, scoped to `main`.
-- **Approval identity.** Until the bot identity exists, agents act through the owner's account. In that period gated items wait for the owner's approval phrase in chat, recorded in `CURRENT-WORK.md`, and agents never call approval or bypass endpoints.
+- **Approval identity.** Agents act as `wbdevworld-poii-agent[bot]`. Gated items wait for the owner's approval phrase in chat, recorded in `CURRENT-WORK.md`, and for the owner's review on GitHub where code-owner paths are touched. Agents never call approval or bypass endpoints.
 - **First production activation** needs the owner's phrase `POII PRODUCTION ACTIVATION APPROVED`, given after staging is shown green, the restore drill has passed and the secrets are set. After that, routine releases go out without the owner.
 
 ## What is recorded where
