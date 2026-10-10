@@ -35,6 +35,10 @@ test('risk-classify.yml runs on reviews, reads policy and CODEOWNERS from the ba
   assert.match(yml, /readFileSync\('\.github\/CODEOWNERS'/);
   assert.match(yml, /pulls\.listReviews/);
   assert.match(yml, /core\.setFailed\(/);
+  // After an approval, the failed run from the push is re-run so the required check turns green without a new push.
+  assert.match(yml, /actions: write/);
+  assert.match(yml, /reRunWorkflowFailedJobs/);
+  assert.match(yml, /event: 'pull_request', status: 'failure'/);
 });
 
 test('the policy names the owner as the only approver; CODEOWNERS is the fallback for an older base policy', () => {
