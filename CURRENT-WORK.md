@@ -2,6 +2,12 @@
 
 Newest entry first. Every entry says what was run and what was not. Mocked work is labelled mocked.
 
+## Review gate: the approval re-runs the stale failed classify run — 2026-10-10 UTC
+
+Follow-up to PR #35, found on its own merge: GitHub counts every `classify` check run on a head commit, so the run from the push (failed: no approval yet) still blocked the merge after the review-triggered run had passed, and the owner's login had to re-run it by hand (the bot token cannot re-run workflows). Now, when a review-triggered `classify` run finds the approval, it lists this workflow's failed `pull_request` runs on the same head and re-runs their failed jobs (`actions: write` on the workflow token); those re-runs re-read the reviews and pass. Nothing else in the check changes; a dismissed approval still fails the review-triggered run. `owner-approval.test.mjs` asserts the re-run code and permission are present; `docs/release-policy.md` describes it.
+
+Gated (`release-workflows-and-policy`); approval requested as `POII GATED APPROVED: PR WB-DevWorld/POII#N` plus the GitHub review. Local evidence: policy tests 15/15, inlined script parses, YAML parses with the three permissions. The first real run of the re-run step happens on the first gated PR approved after this merges; until then, or on this PR itself, a stale failed run is re-run by the owner's login.
+
 ## M2 integration: #35 and #33 merged, CodeQL triage, deploy-script output hygiene — 2026-10-10 UTC
 
 Owner approvals typed in chat on 2026-10-10, in one message: "POII GATED APPROVED: PR WB-DevWorld/POII#35", then "POII GATED APPROVED: PR WB-DevWorld/POII#33", then, before #31 and #30: "triage the 5 open CodeQL alerts (3 in apps/api/src/ops/drill.ts, 2 in infra/scripts/dokploy-deploy.mjs): fix them or dismiss each with a written reason, as you did on #26. Confirm the deploy script never writes Dokploy environment values or secrets to the step summary or job outputs, since they are public on this repo. Record it in CURRENT-WORK.md. Also make sure every worktree commits with the bot as author.", then "POII GATED APPROVED: PR WB-DevWorld/POII#31, POII GATED APPROVED: PR WB-DevWorld/POII#30, POII GATED APPROVED: PR WB-DevWorld/POII#25". The owner approved #35 and #33 on GitHub on their final heads.
