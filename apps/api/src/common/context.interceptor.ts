@@ -14,11 +14,20 @@ const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 /**
  * Restore is idempotent by itself and replaces the workspace; backups are too large to keep as replies.
  * AI previews carry source text in their reply and must never be stored as a replay (#13 AI).
+ * Token creation is excluded too: its response holds the token secret, which must never be stored (#14).
  */
-const NOT_IDEMPOTENT_BY_KEY = new Set(['/v1/restore', '/v1/backup', '/v1/ai/preview']);
+const NOT_IDEMPOTENT_BY_KEY = new Set(['/v1/restore', '/v1/backup', '/v1/ai/preview', '/v1/tokens']);
+/** /v1/auth/* is Better Auth's own handler (local-signin), mounted before Nest; nothing there is resolved per request. */
+const AUTH_PREFIX = '/v1/auth/';
+
+/** Lower-case path without trailing slashes ('/' stays '/'). */
+export function normalizedPath(path: string): string {
+  const trimmed = path.toLowerCase().replace(/\/+$/, '');
+  return trimmed || '/';
+}
 
 /**
- * For every /v1 request: resolves the actor and workspace through the identity port, then applies
+ * For every /v1 request except /v1/auth/*: resolves the actor and workspace through the identity port, then applies
  * Idempotency-Key semantics to mutating calls (same key + same body → the stored first response;
  * same key + different body → 409 idempotency_mismatch).
  */
@@ -34,15 +43,18 @@ export class ContextInterceptor implements NestInterceptor {
     const req = context.switchToHttp().getRequest<PoiiRequest>();
     const res = context.switchToHttp().getResponse<PoiiResponse>();
     const path = requestPath(req);
-    if (path !== '/v1' && !path.startsWith('/v1/')) return next.handle();
+    // Express matches routes case-insensitively and ignores a trailing slash: decide on the normalized path.
+    const route = normalizedPath(path);
+    if (route !== '/v1' && !route.startsWith('/v1/')) return next.handle();
+    if (route.startsWith(AUTH_PREFIX)) return next.handle();
 
-    const resolved = await this.identity.resolve({ headers: req.headers });
+    const resolved = await this.identity.resolve({ headers: req.headers, method: req.method });
     const requestId = req.requestId ?? v7();
     req.poii = { actor: resolved.actor, workspace: { id: resolved.workspace.id, name: resolved.workspace.name }, requestId };
 
     const method = req.method.toUpperCase();
     const key = headerValue(req, 'idempotency-key');
-    if (key === undefined || !MUTATING.has(method) || NOT_IDEMPOTENT_BY_KEY.has(path.replace(/\/+$/, '').toLowerCase())) return next.handle();
+    if (key === undefined || !MUTATING.has(method) || NOT_IDEMPOTENT_BY_KEY.has(route) || route.startsWith('/v1/tokens/')) return next.handle();
     if (!key || key.length > 200) throw badRequest('invalid_idempotency_key', 'Idempotency-Key must be 1 to 200 characters');
 
     const workspaceId = resolved.workspace.id;

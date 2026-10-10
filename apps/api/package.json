@@ -19,6 +19,7 @@
     "@nestjs/core": "12.1.2",
     "@nestjs/platform-express": "12.1.2",
     "@poii/contracts": "workspace:*",
+    "better-auth": "1.7.7",
     "drizzle-orm": "0.45.4",
     "pg": "8.23.1",
     "reflect-metadata": "0.2.2",

@@ -18,6 +18,7 @@ export interface PoiiRequest {
   body?: unknown;
   requestId?: string;
   poii?: RequestContext;
+  socket?: { remoteAddress?: string };
 }
 
 export interface PoiiResponse {

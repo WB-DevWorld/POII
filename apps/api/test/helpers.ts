@@ -51,8 +51,8 @@ export async function startApi(databaseUrl: string): Promise<TestApi> {
   const settings = config({ DATABASE_URL: databaseUrl, GIT_SHA: 'test', PORT: '0', POII_STORAGE_LOCAL_DIR: storageDir });
   const db = createDb(databaseUrl, 4);
   const { module, ports } = createApp(settings, db);
-  const app = await NestFactory.create(module, { logger: false });
-  configureHttpApp(app);
+  const app = await NestFactory.create(module, { logger: false, bodyParser: false });
+  configureHttpApp(app, ports);
   await app.listen(0, '127.0.0.1');
   const base = (await app.getUrl()).replace('[::1]', '127.0.0.1');
   return {

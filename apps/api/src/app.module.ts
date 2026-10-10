@@ -33,6 +33,27 @@ import { createAiExecution } from './ai/factory.js';
 import { AiController } from './modules/ai/ai.controller.js';
 import { AiService } from './modules/ai/ai.service.js';
 // end #13 AI
+// #14 auth and tokens
+import { AUTH_BASE_PATH, BetterAuthIdentity } from './adapters/better-auth.identity.js';
+import { OwnerTokenIdentity } from './adapters/owner-token.identity.js';
+import { TokensController } from './modules/tokens/tokens.controller.js';
+import { TokensService } from './modules/tokens/tokens.service.js';
+
+/** The configured identity adapter, with owner tokens (Authorization: Bearer) resolved in front of it. */
+export function identityFor(settings: Settings, db: Db): IdentityPort {
+  const inner = settings.identityAdapter === 'local-signin' ? new BetterAuthIdentity(db, settings) : new LocalOwnerIdentity(db, settings);
+  return new OwnerTokenIdentity(db, inner);
+}
+
+/** Better Auth behind the identity port, when local-signin is configured. */
+export function signInAdapter(ports: Ports): BetterAuthIdentity | undefined {
+  const identity = ports.identity;
+  const inner = identity instanceof OwnerTokenIdentity ? identity.inner : identity;
+  return inner instanceof BetterAuthIdentity ? inner : undefined;
+}
+const AUTH_CONTROLLERS = [TokensController];
+const AUTH_PROVIDERS = [TokensService];
+// end #14 auth and tokens
 
 export { DB, SETTINGS };
 
@@ -47,7 +68,7 @@ export interface Ports {
 
 export function createPorts(settings: Settings, db: Db): Ports {
   return {
-    identity: new LocalOwnerIdentity(db, settings),
+    identity: identityFor(settings, db), // #14 auth and tokens
     storage: new LocalFsStorage(settings.storageLocalDir),
     ai: settings.aiEnabled ? createAiExecution(settings, db) : new OffAiExecution(), // #13 AI
   };
@@ -59,6 +80,7 @@ export function createApp(settings: Settings, db: Db = createDb(settings.databas
       HealthController, IdentityController, SourcesController, RecordsController, ViewsController, SearchController,
       ExportsController, BackupController,
       AiController, // #13 AI
+      ...AUTH_CONTROLLERS, // #14 auth and tokens
     ],
     providers: [
       { provide: SETTINGS, useValue: settings },
@@ -70,6 +92,7 @@ export function createApp(settings: Settings, db: Db = createDb(settings.databas
       { provide: APP_INTERCEPTOR, useClass: ContextInterceptor },
       IdentityService, SourcesService, RecordsService, ViewsService, SearchService, ExportsService, BackupService,
       AiService, // #13 AI
+      ...AUTH_PROVIDERS, // #14 auth and tokens
     ],
   })
   class AppModule implements NestModule {
@@ -80,7 +103,16 @@ export function createApp(settings: Settings, db: Db = createDb(settings.databas
   return { module: AppModule, db, ports, shutdown: () => db.close() };
 }
 
-/** HTTP-level settings that must be applied before the app initializes (call before listen/init). */
-export function configureHttpApp(app: INestApplication): void {
-  (app as NestExpressApplication).useBodyParser('json', { limit: JSON_BODY_LIMIT });
+/**
+ * HTTP-level setup that must run before the app initializes (call before listen/init), on an app created with
+ * `{ bodyParser: false }`. Order matters: Better Auth's handler (local-signin) is mounted at /v1/auth first so it
+ * reads the raw request body itself; Nest's JSON and urlencoded parsers come after it.
+ */
+export function configureHttpApp(app: INestApplication, ports: Ports): void {
+  const http = app as NestExpressApplication;
+  // #14 auth and tokens
+  const signin = signInAdapter(ports);
+  if (signin) http.use(AUTH_BASE_PATH, ...signin.httpHandlers());
+  http.useBodyParser('json', { limit: JSON_BODY_LIMIT });
+  http.useBodyParser('urlencoded', { extended: true });
 }

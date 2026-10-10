@@ -509,3 +509,73 @@ export const HealthVersion = z.object({
   }).nullable(),
 });
 export type HealthVersion = z.infer<typeof HealthVersion>;
+// #14 auth and tokens (ADR-0009) ----------------------------------------------------------------------
+
+/**
+ * Better Auth's session cookie on the API (local-signin; cookie prefix `poii`). With Secure cookies (a
+ * non-loopback WEB_BASE_URL) the name carries the `__Secure-` prefix. The web app keeps the value in its own
+ * cookie and forwards it under this name.
+ */
+export const AUTH_SESSION_COOKIE = 'poii.session_token';
+export const AUTH_SESSION_COOKIE_SECURE = '__Secure-poii.session_token';
+/** Header every cookie-authenticated mutation of a POII endpoint (outside /v1/auth) must carry: `x-poii-csrf: 1`. */
+export const CSRF_HEADER = 'x-poii-csrf';
+
+/** `POST /v1/auth/sign-in/username` (Better Auth username plugin). */
+export const SignInRequest = z.object({
+  username: z.string().trim().min(3).max(30),
+  password: z.string().min(1).max(128),
+});
+export type SignInRequest = z.infer<typeof SignInRequest>;
+
+/** Better Auth's sign-in reply; the session itself travels in the Set-Cookie header. */
+export const SignInResponse = z.object({
+  redirect: z.boolean(),
+  token: z.string(),
+  user: z.object({ id: z.string(), username: z.string().nullish(), actorId: Id.nullish() }).passthrough(),
+});
+export type SignInResponse = z.infer<typeof SignInResponse>;
+
+/** `POST /v1/auth/change-password`; POII always revokes the other sessions. */
+export const ChangePasswordRequest = z.object({
+  currentPassword: z.string().min(1).max(128),
+  newPassword: z.string().min(12).max(128),
+  revokeOtherSessions: z.literal(true),
+});
+export type ChangePasswordRequest = z.infer<typeof ChangePasswordRequest>;
+
+/** Better Auth's error body on /v1/auth/* (POII endpoints use `{ error, message, requestId }`). */
+export const AuthErrorBody = z.object({ code: z.string().optional(), message: z.string() });
+export type AuthErrorBody = z.infer<typeof AuthErrorBody>;
+
+export const tokenScopes = ['read', 'propose'] as const;
+export const TokenScope = z.enum(tokenScopes);
+export type TokenScope = z.infer<typeof TokenScope>;
+
+export const CreateTokenRequest = z.object({
+  name: z.string().trim().min(1).max(100),
+  scopes: z.array(TokenScope).min(1).max(2),
+  expiresAt: IsoTime,
+});
+export type CreateTokenRequest = z.infer<typeof CreateTokenRequest>;
+
+export const TokenView = z.object({
+  id: Id,
+  name: z.string(),
+  scopes: z.array(TokenScope),
+  /** First characters of the secret, for recognising a token; never enough to use it. */
+  secretPrefix: z.string(),
+  /** The agent_token actor everything this token proposes is attributed to. */
+  actorId: Id,
+  ownerActorId: Id,
+  createdAt: IsoTime,
+  expiresAt: IsoTime,
+  lastUsedAt: IsoTime.nullable(),
+  revokedAt: IsoTime.nullable(),
+  status: z.enum(['active', 'expired', 'revoked']),
+});
+export type TokenView = z.infer<typeof TokenView>;
+
+/** The only response that ever contains the secret. */
+export const CreatedTokenResponse = z.object({ token: TokenView, secret: z.string() });
+export type CreatedTokenResponse = z.infer<typeof CreatedTokenResponse>;
