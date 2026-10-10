@@ -8,7 +8,7 @@ The owner created the GitHub App `wbdevworld-poii-agent` (App ID 5258365, instal
 
 Done, verified live: the key signs an App token that GitHub accepts for App ID 5258365; the installation token sees `WB-DevWorld/POII` and nothing else; repository secrets `POII_AGENT_APP_ID` and `POII_AGENT_APP_PRIVATE_KEY` and the repository variable `POII_AGENT_INSTALLATION_ID` are set; the checkout's repo-local git identity is now the bot's noreply address (the earlier `WB DevWorld` identity is superseded); `scripts/agent-token.mjs` mints and caches tokens and works as a git credential helper (tested: `check`, `git-credential get` for github.com, no answer for other hosts). Runbook section 2 rewritten to the real state.
 
-Not done by the agent, blocked by its permission mode and handed to the owner as exact commands: turning on `require_code_owner_review` in the `Protect main` ruleset and `prevent_self_review` on the `production-gated` environment. Until the owner runs them, the gate still depends on agents following the rule. Note: code-owner review only bites once `.github/CODEOWNERS` names `@wbdevworld` (that fix is part of the approved gate-hardening PR, not this one).
+Applied by the owner on 2026-10-10 from prepared request bodies, after the agent's permission mode refused the two settings calls: `require_code_owner_review` is on in the `Protect main` ruleset and `prevent_self_review` is on for the `production-gated` environment (both read back true). Code-owner review only bites once `.github/CODEOWNERS` names `@wbdevworld` (that fix is part of the approved gate-hardening PR, not this one).
 
 ## Owner approvals and record corrections — 2026-10-10 UTC
 
