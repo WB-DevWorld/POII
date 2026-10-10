@@ -11,6 +11,7 @@
     "typecheck": "pnpm run contracts && pnpm -r typecheck",
     "test": "pnpm run contracts && pnpm -r test",
     "lint": "pnpm run contracts && pnpm -r lint",
-    "dev": "pnpm -r --parallel dev"
+    "dev": "pnpm -r --parallel dev",
+    "policy:check": "node --test \".github/release-policy/*.test.mjs\" \"infra/scripts/*.test.mjs\" && node .github/release-policy/check-coverage.mjs"
   }
 }

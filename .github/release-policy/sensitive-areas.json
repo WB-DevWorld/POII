@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "description": "Where sensitive code actually lives, as case-insensitive regular expressions on repository paths. check-coverage.mjs (run in CI) fails when a tracked file matches an area but no gated rule in risk-classes.json matches it. Adding a file in one of these areas therefore forces a classifier update in the same PR. Changing this file is itself gated.",
+  "areas": [
+    {
+      "area": "identity-session-token",
+      "expectedClass": "identity-auth-permissions-tokens",
+      "include": [
+        "^apps/(api|web)/src/.*(identit|session|token|auth|sign-?in|sign-?out|login|logout|password|credential|permission).*\\.(ts|tsx|mts)$",
+        "^apps/api/src/authorization/",
+        "^apps/api/src/common/(request-context|context\\.interceptor)\\.ts$",
+        "^apps/web/src/(middleware|proxy)\\.ts$"
+      ],
+      "exclude": [
+        "\\.test\\.",
+        "(^|/)test/"
+      ]
+    },
+    {
+      "area": "deletion-retention",
+      "expectedClass": "information-policy",
+      "include": [
+        "^apps/api/src/.*(delet|tombstone|retention|retain|purge|prune|expir|disclos)[^/]*\\.ts$",
+        "^apps/api/src/modules/sources/"
+      ],
+      "exclude": [
+        "\\.test\\."
+      ]
+    },
+    {
+      "area": "ai-disclosure-caps-providers",
+      "expectedClass": "spending-and-caps or information-policy",
+      "include": [
+        "^apps/(api|web)/src/.*(^|/)ai/",
+        "^apps/(api|web)/src/.*(^|/|[-_.])ai([-_.]|/)[^/]*$",
+        "^apps/api/src/.*(anthropic|openai|provider|disclos|budget|spend)[^/]*\\.ts$",
+        "^apps/api/src/.*(^|/|[-_.])caps?([-_.]|/)[^/]*$"
+      ],
+      "exclude": [
+        "\\.test\\."
+      ]
+    },
+    {
+      "area": "export-format",
+      "expectedClass": "ownership-and-data-model",
+      "include": [
+        "^apps/api/src/domain/context-pack",
+        "^apps/api/src/modules/exports?/",
+        "^apps/api/src/.*(export|context-pack)[^/]*\\.ts$",
+        "^packages/contracts/src/"
+      ],
+      "exclude": [
+        "\\.test\\."
+      ]
+    },
+    {
+      "area": "schema-migrations",
+      "expectedClass": "ownership-and-data-model or destructive-migrations",
+      "include": [
+        "^apps/api/src/db/",
+        "^apps/api/drizzle/",
+        "^apps/api/drizzle\\.config\\.",
+        "^apps/api/src/migrate\\.ts$",
+        "^apps/api/src/.*(schema|migrat)[^/]*\\.ts$"
+      ],
+      "exclude": []
+    },
+    {
+      "area": "release-enforcement",
+      "expectedClass": "release-workflows-and-policy",
+      "include": [
+        "^\\.github/(workflows|release-policy)/",
+        "^\\.github/CODEOWNERS$",
+        "^\\.github/dependabot\\.yml$",
+        "^infra/(releases|scripts|github)/",
+        "^compose\\.dokploy\\.yaml$",
+        "^docs/release-policy\\.md$"
+      ],
+      "exclude": []
+    }
+  ]
+}

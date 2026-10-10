@@ -1,10 +1,15 @@
-# Protected policy and classification files: the owner reviews every change.
-/.github/release-policy/ @WB-DevWorld
-/.github/workflows/ @WB-DevWorld
-/.github/CODEOWNERS @WB-DevWorld
-/docs/release-policy.md @WB-DevWorld
-/BUILD-BASELINE.md @WB-DevWorld
-/OWNERSHIP.md @WB-DevWorld
-/docs/adr/ @WB-DevWorld
-/apps/api/drizzle/ @WB-DevWorld
-/compose.dokploy.yaml @WB-DevWorld
+# Protected policy, classification and release files: the owner reviews every change.
+# The owner's GitHub handle is @wbdevworld (a user account). The organisation name is not a valid owner.
+# Code-owner review is not yet required by the ruleset; it switches on with the bot identity (docs/runbooks/bot-identity-switchover.md).
+/.github/release-policy/ @wbdevworld
+/.github/workflows/ @wbdevworld
+/.github/CODEOWNERS @wbdevworld
+/.github/dependabot.yml @wbdevworld
+/docs/release-policy.md @wbdevworld
+/BUILD-BASELINE.md @wbdevworld
+/OWNERSHIP.md @wbdevworld
+/docs/adr/ @wbdevworld
+/apps/api/drizzle/ @wbdevworld
+/apps/api/src/db/ @wbdevworld
+/compose.dokploy.yaml @wbdevworld
+/infra/ @wbdevworld
