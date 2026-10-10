@@ -70,3 +70,10 @@ Mutating requests may send `Idempotency-Key: <opaque>`; a retry with the same ke
 ## Health
 
 `GET /health/live` → `{ status, version }`. `GET /health/ready` → `{ status, version, aiEnabled }`, 503 when the database is unavailable.
+
+## Attribution rules and error codes
+
+- `statedRole: owner` requires `statedByActorId` to be the workspace owner (it defaults to the owner when omitted). `statedRole: assistant` requires an `ai_assistant` actor, and an `ai_assistant` actor can only be cited with role `assistant`. Violations return `400 attribution_mismatch`. `statementMode: ai_extracted` from a human caller returns `400 ai_extracted_not_allowed`.
+- `timeConflicts` is one list per record; the web app tags each note with `effective:` or `observed:` to show the conflict next to the right time.
+- Codes beyond those in the tables: `validation_failed` (400, zod issues in `details`), `not_found` (404), `authority_required` and `forbidden` (403), `already_confirmed`, `record_rejected`, `cannot_supersede_rejected`, `confirmed_record_immutable`, `record_has_confirmed_successor`, `last_evidence`, `revision_content_exists`, `idempotency_mismatch`, `workspace_not_empty`, `conflict` (all 409), `invalid_backup` (400).
+- Changing `aiAllowed`, archiving, deleting, backing up and restoring require the `delete` capability (authority).

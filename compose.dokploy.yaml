@@ -34,6 +34,8 @@ services:
       GIT_SHA: ${GIT_SHA:?}
       WEB_BASE_URL: ${WEB_BASE_URL:?}
       POII_IDENTITY_ADAPTER: ${POII_IDENTITY_ADAPTER:-local-owner}
+      # ADR-0004: local-owner refuses a non-loopback WEB_BASE_URL unless the owner sets this deliberately per environment.
+      POII_ALLOW_LOCAL_OWNER_REMOTE: ${POII_ALLOW_LOCAL_OWNER_REMOTE:-false}
       POII_SESSION_SECRET: ${POII_SESSION_SECRET:?}
       POII_STORAGE_ADAPTER: ${POII_STORAGE_ADAPTER:-local}
       POII_STORAGE_LOCAL_DIR: /data/storage

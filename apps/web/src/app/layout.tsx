@@ -1,5 +1,8 @@
 import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
+import type { HealthReady } from '@poii/contracts';
+import { Nav } from '@/components/Nav';
+import { apiTry } from '@/lib/api';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -18,29 +21,26 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
-const navigation = [
-  { href: '/sources', label: 'Sources' },
-  { href: '/records', label: 'Records' },
-  { href: '/decisions', label: 'Current decisions' },
-  { href: '/search', label: 'Search' },
-  { href: '/export', label: 'Export' },
-  { href: '/backup', label: 'Backup' },
-];
-
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  const ready = await apiTry<HealthReady>('/health/ready');
+  const aiOn = ready.ok && ready.data.aiEnabled === true;
+  const pillTitle = !ready.ok
+    ? 'API not reachable; AI state unknown, treated as off'
+    : aiOn
+      ? 'AI-assisted extraction is configured. AI output stays a candidate until a person confirms it.'
+      : 'AI assistance is off until a provider is configured';
   return (
     <html lang="en">
       <body>
+        <a className="skip-link" href="#main">Skip to content</a>
         <header className="site-header">
           <a className="brand" href="/">POII</a>
-          <nav aria-label="Primary">
-            {navigation.map(item => (
-              <a key={item.href} href={item.href}>{item.label}</a>
-            ))}
-          </nav>
-          <span className="status-pill" title="AI assistance is off until a provider is configured">AI off</span>
+          <Nav />
+          <span className={`status-pill${aiOn ? ' on' : ''}`} title={pillTitle} data-testid="ai-pill">
+            {aiOn ? 'AI on' : 'AI off'}
+          </span>
         </header>
-        <main className="page">{children}</main>
+        <main className="page" id="main">{children}</main>
         <footer className="site-footer">
           <span>Version {process.env.GIT_SHA?.slice(0, 12) ?? 'dev'}</span>
           <span>Own the knowledge, rent the intelligence.</span>

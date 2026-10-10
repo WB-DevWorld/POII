@@ -69,6 +69,8 @@ export const RevisionMeta = z.object({
   note: z.string().nullable(),
   createdAt: IsoTime,
   createdByActorId: Id,
+  /** Only on the response to POST /v1/sources/:id/revisions when a new revision was added: how evidence re-anchored. */
+  reanchored: z.object({ exact: z.number().int().nonnegative(), moved: z.number().int().nonnegative(), lost: z.number().int().nonnegative() }).optional(),
 });
 export type RevisionMeta = z.infer<typeof RevisionMeta>;
 
@@ -356,4 +358,35 @@ export const RestoreResponse = z.object({
     auditEvents: z.number().int(),
   }),
   workspaceId: Id,
+  /** True when this exact backup had already been restored into this workspace; nothing was written. */
+  alreadyRestored: z.boolean().optional(),
 });
+export type RestoreResponse = z.infer<typeof RestoreResponse>;
+
+/** One row of a backed-up table: column names in camelCase, times as ISO strings. */
+export const BackupRow = z.record(z.string(), z.unknown());
+
+/** The poii.backup v1 document (ADR-0008): the complete workspace with identical ids and original bytes. */
+export const BackupDocument = z.object({
+  format: z.literal(BACKUP_FORMAT),
+  formatVersion: z.literal(BACKUP_VERSION),
+  generatedAt: IsoTime,
+  exportRunId: Id.optional(),
+  workspace: z.object({ id: Id, name: z.string(), createdAt: IsoTime }),
+  actors: z.array(BackupRow),
+  sources: z.array(BackupRow),
+  /** Each revision carries contentText and originalBase64 (the bytes from the storage port). */
+  revisions: z.array(BackupRow),
+  tombstones: z.array(BackupRow),
+  records: z.array(BackupRow),
+  versions: z.array(BackupRow),
+  evidence: z.array(BackupRow),
+  approvals: z.array(BackupRow),
+  auditEvents: z.array(BackupRow),
+  exportRuns: z.array(BackupRow),
+});
+export type BackupDocument = z.infer<typeof BackupDocument>;
+
+export type SearchHit = z.infer<typeof SearchHit>;
+export type ExportRunView = z.infer<typeof ExportRunView>;
+export type ManifestSource = z.infer<typeof ManifestSource>;
