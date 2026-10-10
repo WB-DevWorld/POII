@@ -22,7 +22,7 @@
 // Usage (from .claude/settings.json, see docs/claude-code-hook.md):
 //   node /path/to/poii/scripts/poii-hook.mjs
 
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { closeSync, fstatSync, openSync, readFileSync } from 'node:fs';
 import { basename, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -226,8 +226,14 @@ export function buildSource({ sessionId, projectName, messages, capture, redacti
 /** Reads `.poii/capture.json`. Returns null when the project has not opted in. Throws when the file is invalid. */
 export function readCaptureConfig(projectDir) {
   const file = join(projectDir, '.poii', 'capture.json');
-  if (!existsSync(file)) return null;
-  const parsed = JSON.parse(readFileSync(file, 'utf8'));
+  let text;
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch (error) {
+    if (error && error.code === 'ENOENT') return null;
+    throw error;
+  }
+  const parsed = JSON.parse(text);
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('.poii/capture.json must be a JSON object');
   if (parsed.enabled !== true) return null;
   const events = parsed.events ?? ['Stop'];
@@ -363,10 +369,20 @@ export async function run({ env = process.env, stdinText, now = () => new Date()
   const sessionId = input.session_id;
   if (typeof sessionId !== 'string' || !/^[A-Za-z0-9-]{1,100}$/.test(sessionId)) { log('hook input has no usable session_id'); return 'bad-input'; }
   const transcriptPath = input.transcript_path;
-  if (typeof transcriptPath !== 'string' || !existsSync(transcriptPath)) { log('transcript file not found; nothing captured'); return 'no-transcript'; }
-  if (statSync(transcriptPath).size > MAX_TRANSCRIPT_BYTES) { log('transcript is larger than 100 MB; nothing captured'); return 'too-large'; }
+  if (typeof transcriptPath !== 'string') { log('hook input has no transcript_path; nothing captured'); return 'no-transcript'; }
+  // One open file descriptor for the size check and the read, so the file cannot change between the two.
+  let transcriptText;
+  try {
+    const fd = openSync(transcriptPath, 'r');
+    try {
+      if (fstatSync(fd).size > MAX_TRANSCRIPT_BYTES) { log('transcript is larger than 100 MB; nothing captured'); return 'too-large'; }
+      transcriptText = readFileSync(fd, 'utf8');
+    } finally {
+      closeSync(fd);
+    }
+  } catch { log('transcript file not found or unreadable; nothing captured'); return 'no-transcript'; }
 
-  const messages = extractMessages(readFileSync(transcriptPath, 'utf8'), {
+  const messages = extractMessages(transcriptText, {
     lastAssistantMessage: input.hook_event_name === 'Stop' ? input.last_assistant_message : null,
   });
   const projectName = basename(resolve(projectDir));
