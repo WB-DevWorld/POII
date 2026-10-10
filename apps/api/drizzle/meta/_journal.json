@@ -36,6 +36,13 @@
       "when": 1791606780576,
       "tag": "0004_better_auth_and_owner_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791640000000,
+      "tag": "0005_accesslobby_identity_link",
+      "breakpoints": true
     }
   ]
 }

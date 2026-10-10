@@ -13,6 +13,7 @@ export interface Settings {
   aiEnabled: boolean;
   webBaseUrl: string;
   ai: AiSettings; // #13 AI
+  accesslobby: AccessLobbySettings | null; // #17 AccessLobby OIDC: null unless POII_ACCESSLOBBY_ISSUER is set
 }
 
 export function config(env: NodeJS.ProcessEnv = process.env): Settings {
@@ -35,6 +36,7 @@ export function config(env: NodeJS.ProcessEnv = process.env): Settings {
     aiEnabled: env.POII_AI_ENABLED === 'true',
     webBaseUrl: env.WEB_BASE_URL ?? 'http://localhost:3000',
     ai: aiConfig(env), // #13 AI
+    accesslobby: accessLobbySettings(env, identityAdapter), // #17 AccessLobby OIDC
   };
 }
 
@@ -154,3 +156,80 @@ function authSettings(env: NodeJS.ProcessEnv, identityAdapter: string): AuthSett
   }
   return { ownerLogin, bootstrapPassword, sessionTtlHours, trustProxy: env.POII_TRUST_PROXY === 'true', sessionSecret, apiBaseUrl: parsed.origin };
 }
+
+// #17 AccessLobby OIDC (ADR-0012) -------------------------------------------------------------------
+// AccessLobby sign-in and explicit account linking on top of local-signin, built to the AccessLobby consumer
+// contract v0.1. Off unless POII_ACCESSLOBBY_ISSUER is set; then the client ID and the AccessLobby API URL are
+// required too. The redirect and post-logout URIs live on the web origin (the browser never talks to the API).
+export interface AccessLobbySettings {
+  /** Exact issuer; discovery is `${issuer}/.well-known/openid-configuration` and must name the same issuer. */
+  issuer: string;
+  clientId: string;
+  /** Confidential client only (client_secret_basic); unset = public client with PKCE (the contract's default profile). */
+  clientSecret: string | undefined;
+  /** AccessLobby API base URL; POII calls `${apiUrl}/v1/me` with the access token to obtain person.id. */
+  apiUrl: string;
+  /** Audience the access token must carry (contract: `accesslobby-api`). */
+  apiAudience: string;
+  /** Registered callback on the web origin. */
+  redirectUri: string;
+  /** Registered post-logout redirect on the web origin ("all connected apps" sign-out). */
+  postLogoutRedirectUri: string;
+  /** Requested scopes. POII uses only `sub` and the access token; email is never read (no email merge). */
+  scopes: string[];
+  /** Timeout for every server-side call to AccessLobby (discovery, token, JWKS, /v1/me). */
+  httpTimeoutMs: number;
+}
+
+/** Callback, post-logout and backchannel paths on the web origin (registered with AccessLobby). */
+export const ACCESSLOBBY_WEB_PATHS = {
+  callback: '/signin/accesslobby/callback',
+  signedOut: '/signin/accesslobby/signed-out',
+  backchannelLogout: '/signin/accesslobby/backchannel-logout',
+} as const;
+
+function exactUrl(name: string, value: string): string {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${name} must be an absolute URL`);
+  }
+  const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname.toLowerCase());
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) {
+    throw new Error(`${name} must use https (plain http only on localhost)`);
+  }
+  if (url.username || url.password || url.search || url.hash) throw new Error(`${name} must not contain credentials, a query or a fragment`);
+  return value;
+}
+
+export function accessLobbySettings(env: NodeJS.ProcessEnv, identityAdapter: string): AccessLobbySettings | null {
+  const issuer = env.POII_ACCESSLOBBY_ISSUER?.trim() || undefined;
+  const clientId = env.POII_ACCESSLOBBY_CLIENT_ID?.trim() || undefined;
+  const apiUrl = env.POII_ACCESSLOBBY_API_URL?.trim() || undefined;
+  if (!issuer) {
+    if (clientId || apiUrl || env.POII_ACCESSLOBBY_CLIENT_SECRET) throw new Error('POII_ACCESSLOBBY_* is set but POII_ACCESSLOBBY_ISSUER is not');
+    return null;
+  }
+  if (identityAdapter !== 'local-signin') {
+    throw new Error('AccessLobby sign-in needs POII_IDENTITY_ADAPTER=local-signin: an AccessLobby identity is linked to the owner from a password session');
+  }
+  if (!clientId || !/^[A-Za-z0-9._-]{1,128}$/.test(clientId)) throw new Error('POII_ACCESSLOBBY_CLIENT_ID is required (letters, digits, ., _ or -)');
+  if (!apiUrl) throw new Error('POII_ACCESSLOBBY_API_URL is required (the AccessLobby API that answers GET /v1/me)');
+  const web = (env.WEB_BASE_URL ?? 'http://localhost:3000').replace(/\/+$/, '');
+  return {
+    issuer: exactUrl('POII_ACCESSLOBBY_ISSUER', issuer),
+    clientId,
+    clientSecret: env.POII_ACCESSLOBBY_CLIENT_SECRET || undefined,
+    apiUrl: exactUrl('POII_ACCESSLOBBY_API_URL', apiUrl).replace(/\/+$/, ''),
+    apiAudience: env.POII_ACCESSLOBBY_API_AUDIENCE?.trim() || 'accesslobby-api',
+    redirectUri: exactUrl('POII_ACCESSLOBBY_REDIRECT_URI', env.POII_ACCESSLOBBY_REDIRECT_URI?.trim() || `${web}${ACCESSLOBBY_WEB_PATHS.callback}`),
+    postLogoutRedirectUri: exactUrl(
+      'POII_ACCESSLOBBY_POST_LOGOUT_REDIRECT_URI',
+      env.POII_ACCESSLOBBY_POST_LOGOUT_REDIRECT_URI?.trim() || `${web}${ACCESSLOBBY_WEB_PATHS.signedOut}`,
+    ),
+    scopes: ['openid'],
+    httpTimeoutMs: numberEnv(env, 'POII_ACCESSLOBBY_TIMEOUT_MS', 5_000, 500, 60_000),
+  };
+}
+// end #17 AccessLobby OIDC --------------------------------------------------------------------------

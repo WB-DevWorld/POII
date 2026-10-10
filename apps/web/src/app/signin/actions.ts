@@ -8,6 +8,8 @@ import { redirect } from 'next/navigation';
 import type { ActionState } from '@/lib/action-state';
 import { apiRaw, ApiError, toProblem } from '@/lib/api';
 import { parseSessionSetCookie, safeNextPath, SESSION_COOKIE, sessionCookieOptions } from '@/lib/session';
+import { accessLobbyMessage } from './accesslobby/flow';
+import { startFlow } from './accesslobby/start';
 
 const text = (fd: FormData, name: string): string => {
   const value = fd.get(name);
@@ -81,4 +83,15 @@ export async function signOutEverywhereAction(_state: ActionState, _fd: FormData
   if (!response.ok) return failure(response);
   (await cookies()).delete(SESSION_COOKIE);
   redirect('/signin?signedOut=all');
+}
+
+// #17 AccessLobby OIDC (ADR-0012) -------------------------------------------------------------------
+
+/** "Sign in with AccessLobby": starts the flow and sends the browser to AccessLobby. No fallback on failure. */
+export async function accessLobbySignInAction(_state: ActionState, fd: FormData): Promise<ActionState> {
+  const started = await startFlow('signin', safeNextPath(text(fd, 'next')));
+  if ('code' in started) {
+    return { ok: false, problem: { code: started.code, message: accessLobbyMessage(started.code) ?? 'AccessLobby sign-in could not start.' } };
+  }
+  redirect(started.url);
 }

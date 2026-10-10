@@ -10,6 +10,7 @@ export async function Nav() {
   return (
     <nav aria-label="Primary">
       <NavLinks />
+      {signedIn ? <a href="/account" data-testid="nav-account">Account</a> : null}
       {signedIn ? (
         <form action={signOutAction} style={{ display: 'inline', margin: 0 }}>
           <button type="submit" className="secondary" style={{ padding: '0.1rem 0.6rem' }} data-testid="sign-out">Sign out</button>
