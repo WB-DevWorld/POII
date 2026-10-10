@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
-import { changedComposeFields, rewriteEnv, shouldMask } from './dokploy-deploy.mjs';
+import { changedComposeFields, redact, rememberEnvValue, rewriteEnv, sanitizeOutputValue, shouldMask } from './dokploy-deploy.mjs';
 
 const SCRIPT = fileURLToPath(new URL('./dokploy-deploy.mjs', import.meta.url));
 const API_IMAGE = `ghcr.io/wb-devworld/poii-api@sha256:${'2'.repeat(64)}`;
@@ -104,6 +104,7 @@ function runScript(dokployUrl, extraEnv = {}) {
     DEPLOY_POLL_INTERVAL_MS: '40',
     DEPLOY_TIMEOUT_SECONDS: '5',
     GITHUB_OUTPUT: outputFile,
+    GITHUB_STEP_SUMMARY: `${outputFile}.summary.md`,
     ...extraEnv,
   };
   return new Promise(resolve => {
@@ -115,7 +116,11 @@ function runScript(dokployUrl, extraEnv = {}) {
           return [line.slice(0, at), line.slice(at + 1)];
         }));
       } catch {}
-      resolve({ code: error ? error.code ?? 1 : 0, stdout, stderr, outputs });
+      let summary = '';
+      try {
+        summary = readFileSync(`${outputFile}.summary.md`, 'utf8');
+      } catch {}
+      resolve({ code: error ? error.code ?? 1 : 0, stdout, stderr, outputs, summary, outputsRaw: (() => { try { return readFileSync(outputFile, 'utf8'); } catch { return ''; } })() });
     });
   });
 }
@@ -266,7 +271,11 @@ describe('dokploy-deploy.mjs against a mock Dokploy', () => {
     try {
       const result = await runScript(dokploy.url);
       assert.equal(result.code, 1);
-      assert.match(result.stderr, /Dokploy deployment error: compose up failed/);
+      // The Dokploy error text goes to the log only; the summary and outputs never carry it.
+      assert.match(result.stdout, /::error::Dokploy deployment error: compose up failed/);
+      assert.match(result.stderr, /Dokploy deployment error\. Read the deployment log/);
+      assert.doesNotMatch(result.summary, /compose up failed/);
+      assert.equal(result.outputs.deployment_status, 'error');
     } finally {
       await dokploy.close();
     }
@@ -316,6 +325,63 @@ describe('dokploy-deploy.mjs against a mock Dokploy', () => {
       const result = await runScript('http://127.0.0.1:9', extra);
       assert.equal(result.code, 1);
       assert.match(result.stderr, pattern);
+    }
+  });
+});
+
+describe('nothing from the Dokploy environment reaches the outputs or the summary', () => {
+  test('sanitizeOutputValue keeps one printable line and redacts remembered values', () => {
+    rememberEnvValue('fixture-only-db-password');
+    assert.equal(sanitizeOutputValue('a\nb=injected\r\nc'), 'a b=injected c');
+    assert.equal(sanitizeOutputValue('x fixture-only-db-password y'), 'x [redacted] y');
+    assert.equal(redact('the value fixture-only-db-password twice fixture-only-db-password'), 'the value [redacted] twice [redacted]');
+    assert.equal(sanitizeOutputValue('é\u0007'), '??');
+  });
+
+  test('a service environment full of secret-looking values never appears in the log, outputs or summary; Dokploy text is kept out of the summary', async () => {
+    // Placeholder values only (built from parts so no secret-shaped literal exists in this file).
+    const placeholder = kind => ['fixture', 'test', kind, '0000'].join('-');
+    const secrets = [placeholder('db-pw'), placeholder('provider'), placeholder('session'), 'https://poii-staging.example.test'];
+    const env = [
+      ['POSTGRES', 'PASSWORD'].join('_') + `=${secrets[0]}`,
+      ['OPENAI_API', 'KEY'].join('_') + `="${secrets[1]}"`,
+      ['POII_SESSION', 'SECRET'].join('_') + `=${secrets[2]}`,
+      `WEB_BASE_URL=${secrets[3]}`,
+      `API_IMAGE=${OLD_API}`,
+      'GIT_SHA=not-a-sha',
+      '',
+    ].join('\n');
+    const dokploy = await startDokploy({ env, deploy: 'error' });
+    dokploy.state.compose.sourceType = `evil\nvalue=${secrets[0]}`;
+    try {
+      const result = await runScript(dokploy.url, { GITHUB_ACTIONS: 'true' });
+      assert.equal(result.code, 1);
+      for (const value of secrets) {
+        assert.ok(!result.outputsRaw.includes(value), `output carries ${value}`);
+        assert.ok(!result.summary.includes(value), `summary carries ${value}`);
+        assert.ok(!result.stdout.replace(/::add-mask::[^\n]*\n/g, '').includes(value), `log carries ${value}`);
+        assert.ok(!result.stderr.includes(value), `stderr carries ${value}`);
+      }
+      assert.equal(result.outputs.compose_source_type, 'unknown');
+      assert.equal(result.outputs.previous_git_sha, '', 'a malformed previous value is not handed on');
+      assert.match(result.summary, /`GIT_SHA`: `\(set, but not well-formed; see the Dokploy panel\)`/);
+      assert.equal(result.outputsRaw.split('\n').filter(Boolean).every(line => /^[a-z_]+=[\x20-\x7e]*$/.test(line)), true, 'every output is one printable line');
+      assert.doesNotMatch(result.summary, /compose up failed/);
+    } finally {
+      await dokploy.close();
+    }
+  });
+
+  test('an HTTP error from Dokploy puts only the status and code in the failure message', async () => {
+    const dokploy = await startDokploy();
+    try {
+      const result = await runScript(dokploy.url, { DOKPLOY_TOKEN: 'wrong' });
+      assert.equal(result.code, 1);
+      assert.match(result.stderr, /HTTP 401 UNAUTHORIZED \(check DOKPLOY_TOKEN/);
+      assert.doesNotMatch(result.summary, /Authorization not provided/);
+      assert.match(result.stdout, /Dokploy compose\.one said: Authorization not provided/);
+    } finally {
+      await dokploy.close();
     }
   });
 });

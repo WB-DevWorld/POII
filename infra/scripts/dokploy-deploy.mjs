@@ -34,8 +34,31 @@ function fail(message) {
   throw new DeployError(message);
 }
 
+/**
+ * Every value found in the Dokploy service environment (other than the three managed keys) is remembered
+ * here and removed from anything this script writes to the log, the job outputs or the step summary.
+ * The summary and outputs of a public repository are public; masking (::add-mask::) only covers the log.
+ */
+const knownEnvValues = new Set();
+
+export function rememberEnvValue(value) {
+  if (typeof value === 'string' && value.trim().length >= 1) knownEnvValues.add(value.trim());
+}
+
+/** Replaces every remembered environment value in text with [redacted]. Longest values first so partial overlaps cannot leak. */
+export function redact(text) {
+  let out = String(text);
+  for (const value of [...knownEnvValues].sort((a, b) => b.length - a.length)) out = out.split(value).join('[redacted]');
+  return out;
+}
+
+/** Job-output values are one line of printable text: newlines would inject further outputs. */
+export function sanitizeOutputValue(value) {
+  return redact(value).replace(/[\r\n]+/g, ' ').replace(/[^\x20-\x7e]/g, '?').slice(0, 1000);
+}
+
 function log(message) {
-  console.log(message);
+  console.log(redact(message));
 }
 
 const SENSITIVE_KEY = /SECRET|PASSWORD|KEY|TOKEN/i;
@@ -58,11 +81,18 @@ function maskEnvValue(key, value) {
 }
 
 function setOutput(name, value) {
-  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${value}\n`);
+  if (!/^[a-z_]{1,64}$/.test(name)) throw new Error(`Internal error: output name ${name}`);
+  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${sanitizeOutputValue(value)}\n`);
 }
 
 function summary(markdown) {
-  if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${markdown}\n`);
+  if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${redact(markdown)}\n`);
+}
+
+/** Only well-formed managed values (image digest references, a 40-hex SHA) are ever written out; anything else is described, not copied. */
+function describeManaged(key, value) {
+  if (value === undefined || value === '') return '(not set)';
+  return IMAGE_PATTERNS[key].test(value) ? value : '(set, but not well-formed; see the Dokploy panel)';
 }
 
 function readConfig(env) {
@@ -128,9 +158,11 @@ async function call(cfg, procedure, { method = 'GET', query, body } = {}) {
   }
   if (!response.ok) {
     const code = typeof data?.code === 'string' ? data.code : 'unknown';
+    // Dokploy's message is untrusted: it is logged (masked and redacted) but kept out of the failure summary.
     const message = typeof data?.message === 'string' ? data.message.slice(0, 300) : '';
+    if (message) log(`Dokploy ${procedure} said: ${message}`);
     const hint = response.status === 401 || response.status === 403 ? ' (check DOKPLOY_TOKEN and its access to the POII project)' : '';
-    fail(`Dokploy ${procedure}: HTTP ${response.status} ${code}${message ? `: ${message}` : ''}${hint}`);
+    fail(`Dokploy ${procedure}: HTTP ${response.status} ${/^[A-Z_]{1,40}$/.test(code) ? code : 'unknown'}${hint}`);
   }
   return data;
 }
@@ -225,24 +257,28 @@ export async function main(env = process.env) {
   // Mask every value in the service environment before anything else can echo it.
   for (const line of currentEnv.split(/\r?\n/)) {
     const parsed = parseEnvLine(line);
-    if (parsed && !MANAGED_KEYS.includes(parsed.key)) maskEnvValue(parsed.key, parsed.value);
+    if (parsed && !MANAGED_KEYS.includes(parsed.key)) {
+      maskEnvValue(parsed.key, parsed.value);
+      rememberEnvValue(parsed.value);
+    }
   }
   if (compose.isolatedDeployment === true) log('::warning::Isolated Deployment is on for this Compose service; compose.dokploy.yaml expects it off');
   if (compose.autoDeploy === true) log('::warning::Dokploy autodeploy is on; pushes to the configured branch also redeploy staging outside this workflow');
-  const sourceType = typeof compose.sourceType === 'string' ? compose.sourceType : 'unknown';
+  const sourceType = typeof compose.sourceType === 'string' && /^[a-z][a-z0-9_-]{0,31}$/i.test(compose.sourceType) ? compose.sourceType : 'unknown';
   log(`Compose source type: ${sourceType}`);
   setOutput('compose_source_type', sourceType);
 
   const { env: nextEnv, previous } = rewriteEnv(currentEnv, cfg.target);
   for (const key of MANAGED_KEYS) {
-    log(`${key}: ${previous[key] ?? '(not set)'} -> ${cfg.target[key]}`);
-    setOutput(`previous_${key.toLowerCase()}`, previous[key] ?? '');
+    log(`${key}: ${describeManaged(key, previous[key])} -> ${cfg.target[key]}`);
+    // Only a well-formed previous value is handed on as the one-step rollback target.
+    setOutput(`previous_${key.toLowerCase()}`, previous[key] !== undefined && IMAGE_PATTERNS[key].test(previous[key]) ? previous[key] : '');
   }
   summary([
     '### Dokploy',
     '',
     `- Compose source type: \`${sourceType}\``,
-    ...MANAGED_KEYS.map(key => `- \`${key}\`: \`${previous[key] ?? '(not set)'}\` → \`${cfg.target[key]}\``),
+    ...MANAGED_KEYS.map(key => `- \`${key}\`: \`${describeManaged(key, previous[key])}\` → \`${cfg.target[key]}\``),
     '',
   ].join('\n'));
 
@@ -298,9 +334,11 @@ export async function main(env = process.env) {
     }
     if (deployment?.status === 'done') break;
     if (deployment && ['error', 'cancelled'].includes(deployment.status)) {
+      // Dokploy's error text is untrusted and may quote the service environment: it goes to the (masked, redacted) log only, never to the summary.
       const reason = typeof deployment.errorMessage === 'string' ? deployment.errorMessage.slice(0, 500) : 'no error message';
+      log(`::error::Dokploy deployment ${deployment.status}: ${reason}`);
       setOutput('deployment_status', deployment.status);
-      fail(`Dokploy deployment ${deployment.status}: ${reason}. Read the deployment log in Dokploy; nothing was rolled back`);
+      fail(`Dokploy deployment ${deployment.status}. Read the deployment log in Dokploy and the step log above; nothing was rolled back`);
     }
     if (deployment && !['running', 'done', 'error', 'cancelled'].includes(deployment.status)) {
       fail(`Dokploy reported an unknown deployment status "${deployment.status}"; stopping rather than guessing`);
@@ -323,7 +361,7 @@ const invokedDirectly = Boolean(process.argv[1]) && import.meta.url === pathToFi
 if (invokedDirectly) {
   main().catch(error => {
     if (error instanceof DeployError) {
-      console.error(`::error::${error.message}`);
+      console.error(redact(`::error::${error.message}`));
       summary(`**Dokploy step failed:** ${error.message}\n`);
     } else {
       console.error(`::error::Unexpected failure: ${error?.name ?? 'Error'}: ${error?.message ?? ''}`);
