@@ -75,8 +75,8 @@ export async function startAiApi(
     ai: buildAi(settings, db),
   };
   const { module } = createApp(settings, db, ports);
-  const app = await NestFactory.create(module, { logger: false });
-  configureHttpApp(app);
+  const app = await NestFactory.create(module, { logger: false, bodyParser: false });
+  configureHttpApp(app, ports);
   await app.listen(0, '127.0.0.1');
   const base = (await app.getUrl()).replace('[::1]', '127.0.0.1');
   return {
