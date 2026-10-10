@@ -3,7 +3,9 @@ import type {
   AddRevisionRequest, CreateSourceRequest, DeleteSourceRequest, ListSourcesQuery, Locator, RecordSummary, RevisionMeta,
   RevisionView, SourceDetail, SourceView, UpdateSourceRequest,
 } from '@poii/contracts';
-import { and, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { MAX_SPAN_CHARS, type SourceSpanQuery, type SourceSpanView, type WithheldRecord } from '@poii/contracts';
+import { assertSourceReadableByAi, recordsForAi, splitsSurrogatePair } from '../../ai/disclosure.js';
+import { and, count, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import { audit } from '../../common/audit.js';
 import { badRequest, conflict, notFound } from '../../common/errors.js';
@@ -90,18 +92,29 @@ export class SourcesService {
     return byHash?.s ?? null;
   }
 
-  async list(ctx: RequestContext, query: ListSources): Promise<SourceView[]> {
+  /** `ai` (#18, X-POII-AI-Context): never-send sources are left out (countNeverSend gives how many). */
+  async list(ctx: RequestContext, query: ListSources, ai = false): Promise<SourceView[]> {
     requireCapability(ctx.actor, 'read');
     const archived = query.archived === 'true' ? isNotNull(source.archivedAt) : query.archived === 'false' ? isNull(source.archivedAt) : undefined;
     const rows = await this.db.orm.select().from(source)
-      .where(and(eq(source.workspaceId, ctx.workspace.id), archived))
+      .where(and(eq(source.workspaceId, ctx.workspace.id), archived, ai ? eq(source.aiAllowed, true) : undefined))
       .orderBy(desc(source.createdAt), desc(source.id)).limit(query.limit).offset(query.offset);
     return toSourceViews(this.db.orm, rows);
   }
 
-  async get(ctx: RequestContext, id: string): Promise<SourceDetail> {
+  /** #18: never-send sources matching the list filter (ignoring paging); the X-POII-Withheld count in AI context. */
+  async countNeverSend(ctx: RequestContext, query: ListSources): Promise<number> {
+    requireCapability(ctx.actor, 'read');
+    const archived = query.archived === 'true' ? isNotNull(source.archivedAt) : query.archived === 'false' ? isNull(source.archivedAt) : undefined;
+    const row = (await this.db.orm.select({ n: count() }).from(source)
+      .where(and(eq(source.workspaceId, ctx.workspace.id), archived, eq(source.aiAllowed, false))))[0];
+    return Number(row?.n ?? 0);
+  }
+
+  async get(ctx: RequestContext, id: string, ai = false): Promise<SourceDetail> {
     requireCapability(ctx.actor, 'read');
     const row = await findSource(this.db.orm, ctx.workspace.id, id);
+    if (ai) assertSourceReadableByAi(row); // #18
     const [view] = await toSourceViews(this.db.orm, [row]);
     const revisions = await revisionsOf(this.db.orm, id);
     const current = revisions[revisions.length - 1]!;
@@ -113,13 +126,52 @@ export class SourcesService {
     };
   }
 
-  async getRevision(ctx: RequestContext, id: string, revisionId: string): Promise<RevisionView> {
+  async getRevision(ctx: RequestContext, id: string, revisionId: string, ai = false): Promise<RevisionView> {
     requireCapability(ctx.actor, 'read');
-    await findSource(this.db.orm, ctx.workspace.id, id);
+    const src = await findSource(this.db.orm, ctx.workspace.id, id);
+    if (ai) assertSourceReadableByAi(src); // #18
     const row = (await this.db.orm.select().from(sourceRevision)
       .where(and(eq(sourceRevision.id, revisionId), eq(sourceRevision.sourceId, id))))[0];
     if (!row) throw notFound('Revision');
     return { ...toRevisionMeta(row), contentText: row.contentText };
+  }
+
+  /** #18: [startChar, endChar) of one revision (UTF-16 offsets), with lines and hashes. */
+  async getSpan(ctx: RequestContext, id: string, revisionId: string, query: SourceSpanQuery, ai = false): Promise<SourceSpanView> {
+    requireCapability(ctx.actor, 'read');
+    const src = await findSource(this.db.orm, ctx.workspace.id, id);
+    if (ai) assertSourceReadableByAi(src);
+    const row = (await this.db.orm.select().from(sourceRevision)
+      .where(and(eq(sourceRevision.id, revisionId), eq(sourceRevision.sourceId, id))))[0];
+    if (!row) throw notFound('Revision');
+    const { startChar, endChar } = query;
+    if (endChar - startChar > MAX_SPAN_CHARS) {
+      throw badRequest('span_too_large', `At most ${MAX_SPAN_CHARS} characters can be read in one span`, {
+        maxChars: MAX_SPAN_CHARS, spanChars: endChar - startChar,
+      });
+    }
+    const locator = computeLocator(row.contentText, row.id, startChar, endChar);
+    if (splitsSurrogatePair(row.contentText, startChar) || splitsSurrogatePair(row.contentText, endChar)) {
+      throw badRequest('invalid_span', `Span ${startChar}-${endChar} splits a character (a UTF-16 surrogate pair); move the boundary by one`, {
+        startChar, endChar,
+      });
+    }
+    const newest = (await this.db.orm.select({ revisionNo: sourceRevision.revisionNo }).from(sourceRevision)
+      .where(eq(sourceRevision.sourceId, id)).orderBy(desc(sourceRevision.revisionNo)).limit(1))[0];
+    return {
+      sourceId: src.id,
+      sourceTitle: src.title,
+      revisionId: row.id,
+      revisionNo: row.revisionNo,
+      isCurrentRevision: newest?.revisionNo === row.revisionNo,
+      revisionContentSha256: row.contentSha256,
+      startChar,
+      endChar,
+      startLine: locator.startLine,
+      endLine: locator.endLine,
+      text: row.contentText.slice(startChar, endChar),
+      textSha256: locator.excerptSha256,
+    };
   }
 
   /** Adds a revision (identical content is a no-op) and re-anchors every evidence locator on this source. */
@@ -257,9 +309,12 @@ export class SourcesService {
   }
 
   /** Records citing this source, including through evidence that became unavailable when it was deleted. */
-  async records(ctx: RequestContext, id: string): Promise<RecordSummary[]> {
+  async records(ctx: RequestContext, id: string, ai = false): Promise<Array<RecordSummary | WithheldRecord>> {
     requireCapability(ctx.actor, 'read');
-    const exists = (await this.db.orm.select({ id: source.id }).from(source).where(and(eq(source.id, id), eq(source.workspaceId, ctx.workspace.id))))[0]
+    const live = (await this.db.orm.select({ id: source.id, aiAllowed: source.aiAllowed }).from(source)
+      .where(and(eq(source.id, id), eq(source.workspaceId, ctx.workspace.id))))[0];
+    if (ai && live) assertSourceReadableByAi(live); // #18
+    const exists = live
       ?? (await this.db.orm.select({ id: sourceTombstone.id }).from(sourceTombstone)
         .where(and(eq(sourceTombstone.id, id), eq(sourceTombstone.workspaceId, ctx.workspace.id))))[0];
     if (!exists) throw notFound('Source');
@@ -268,6 +323,7 @@ export class SourcesService {
     if (!ids.length) return [];
     const rows = await this.db.orm.select().from(record)
       .where(and(eq(record.workspaceId, ctx.workspace.id), inArray(record.id, ids))).orderBy(desc(record.recordedAt), desc(record.id));
-    return toSummaries(this.db.orm, rows);
+    const summaries = await toSummaries(this.db.orm, rows);
+    return ai ? recordsForAi(this.db.orm, summaries) : summaries;
   }
 }
