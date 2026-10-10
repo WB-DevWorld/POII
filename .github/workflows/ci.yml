@@ -46,6 +46,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24.19.0'
+      - name: Release-policy coverage (every sensitive file must be gated)
+        run: |
+          node --test ".github/release-policy/*.test.mjs" "infra/scripts/*.test.mjs"
+          node .github/release-policy/check-coverage.mjs
       - name: Install pnpm
         run: npm install -g pnpm@11.19.0
       - run: pnpm install --frozen-lockfile

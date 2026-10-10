@@ -2,6 +2,16 @@
 
 Newest entry first. Every entry says what was run and what was not. Mocked work is labelled mocked.
 
+## Gate hardening — 2026-10-10 UTC
+
+Branch `chore/gate-hardening`, one PR, limited to the items the owner listed on 2026-10-10. Owner approval, typed in chat on 2026-10-10: "POII GATED APPROVED: one gate-hardening PR limited to the items in step 3."
+
+What changed: `.github/release-policy/risk-classes.json` version 2 widens every class to where the code lives (identity, session and token files including `adapters/*identity*`, `modules/identity/**`, `common/tokens.ts`, request context and interceptor, and any `*auth*`, `*session*`, `*token*`, `*signin*`, `*password*` file under `apps/*/src`; source deletion and retention code including `modules/sources/**`; AI disclosure, cap, budget and provider code; the export and context-pack format including `domain/context-pack.ts`, `modules/exports/**` and `packages/contracts/src/**`; schema, `db/**`, migrations and `migrate.ts`; every workflow, `infra/scripts/**`, `infra/github/**`). New `sensitive-areas.json` and `check-coverage.mjs` fail the required `verify` check when a tracked file in a sensitive area is not gated; `pnpm policy:check` runs the same locally. `.github/CODEOWNERS` now names `@wbdevworld` (the organisation name was not a valid owner). `docs/release-policy.md` version 2 states what is enforced today and what switches on with the bot identity. The switch-over is prepared, not applied: `docs/runbooks/bot-identity-switchover.md`, `infra/github/ruleset-protect-main.bot.json`, `infra/github/environment-production-gated.bot.json`, `infra/scripts/agent-token.mjs`.
+
+Local evidence on the PR head: `node --test` on the policy and token-script tests 7/7 PASS (including the assertion that the coverage check's glob matcher is byte-identical, whitespace aside, to the one inlined in `risk-classify.yml`, and that every tracked sensitive file is gated); `check-coverage.mjs` PASS: 158 tracked files, 42 in sensitive areas, all gated. Not run locally: the ruleset and environment changes (deliberately; they wait for the bot identity). CI on the PR head is recorded on the PR.
+
+What is still not enforced technically: a gated PR can still be merged by the owner's account, which agents use; see the policy's "What is enforced today".
+
 ## Owner approvals and record corrections — 2026-10-10 UTC
 
 The owner's checkpoint review of 10 Oct 2026 found that PR #10 was merged without the owner's approval phrase and that its description quoted the build commission inaccurately. The owner's instructions and approvals, typed in chat on 2026-10-10, are recorded here word for word.
