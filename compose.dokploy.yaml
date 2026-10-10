@@ -21,7 +21,9 @@ services:
     restart: "no"
     command: ["node", "dist/migrate.js"]
     environment:
-      DATABASE_URL: postgres://poii:${POSTGRES_PASSWORD:?}@db:5432/poii
+      DATABASE_URL: postgres://poii@db:5432/poii
+      # The database password is passed separately (libpq/node-postgres read PGPASSWORD) so it never sits inside a URL.
+      PGPASSWORD: ${POSTGRES_PASSWORD:?}
     networks: [backend]
     depends_on:
       db: { condition: service_healthy }
@@ -30,7 +32,9 @@ services:
     image: ${API_IMAGE:?pin qualified image digest}
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgres://poii:${POSTGRES_PASSWORD:?}@db:5432/poii
+      DATABASE_URL: postgres://poii@db:5432/poii
+      # The database password is passed separately (libpq/node-postgres read PGPASSWORD) so it never sits inside a URL.
+      PGPASSWORD: ${POSTGRES_PASSWORD:?}
       GIT_SHA: ${GIT_SHA:?}
       WEB_BASE_URL: ${WEB_BASE_URL:?}
       POII_IDENTITY_ADAPTER: ${POII_IDENTITY_ADAPTER:-local-owner}
