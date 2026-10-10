@@ -4,6 +4,8 @@ Read `BUILD-BASELINE.md`, `SOURCE-OF-TRUTH.md`, `CURRENT-WORK.md` and the ADRs i
 
 Work on a branch and open a PR for every change. Keep PRs small. Update `CURRENT-WORK.md` with exact evidence: SHA, what was run, what passed, what was not run. Label mocked work as mocked. Never claim CI, staging, production, backup or peer adoption without runtime evidence.
 
+Commit and open PRs as the bot identity `wbdevworld-poii-agent[bot]`, never through the owner's account: the checkout's repo-local git identity and credential helper are set for it, and `GH_TOKEN=$(node scripts/agent-token.mjs) gh ...` acts as the bot (see `docs/runbooks/owner-setup.md` section 2). The owner reviews and approves; the owner never authors agent PRs.
+
 Never commit private evidence, conversations, personal names, business data, credentials or `.env` files. The repository is public. Fixtures are fictional or sanitized.
 
 Gated changes (see `docs/release-policy.md`) wait for the owner's approval phrase in chat; never call approval or bypass endpoints, never change repository visibility or add a licence, never touch other peers.

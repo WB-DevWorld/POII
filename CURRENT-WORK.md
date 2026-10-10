@@ -2,6 +2,14 @@
 
 Newest entry first. Every entry says what was run and what was not. Mocked work is labelled mocked.
 
+## Bot identity switched on — 2026-10-10 UTC
+
+The owner created the GitHub App `wbdevworld-poii-agent` (App ID 5258365, installation 169805354 on this repository only) and handed the agent the private key path in chat; the key itself was never shown or printed. From this entry on, agents commit and open pull requests as `wbdevworld-poii-agent[bot]` instead of the owner's account. This PR is the first one opened as the bot.
+
+Done, verified live: the key signs an App token that GitHub accepts for App ID 5258365; the installation token sees `WB-DevWorld/POII` and nothing else; repository secrets `POII_AGENT_APP_ID` and `POII_AGENT_APP_PRIVATE_KEY` and the repository variable `POII_AGENT_INSTALLATION_ID` are set; the checkout's repo-local git identity is now the bot's noreply address (the earlier `WB DevWorld` identity is superseded); `scripts/agent-token.mjs` mints and caches tokens and works as a git credential helper (tested: `check`, `git-credential get` for github.com, no answer for other hosts). Runbook section 2 rewritten to the real state.
+
+Not done by the agent, blocked by its permission mode and handed to the owner as exact commands: turning on `require_code_owner_review` in the `Protect main` ruleset and `prevent_self_review` on the `production-gated` environment. Until the owner runs them, the gate still depends on agents following the rule. Note: code-owner review only bites once `.github/CODEOWNERS` names `@wbdevworld` (that fix is part of the approved gate-hardening PR, not this one).
+
 ## Owner approvals and record corrections — 2026-10-10 UTC
 
 The owner's checkpoint review of 10 Oct 2026 found that PR #10 was merged without the owner's approval phrase and that its description quoted the build commission inaccurately. The owner's instructions and approvals, typed in chat on 2026-10-10, are recorded here word for word.
