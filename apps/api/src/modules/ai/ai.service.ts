@@ -9,7 +9,6 @@ import type {
 import { and, eq, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import { audit } from '../../common/audit.js';
-import { AppError } from '../../common/errors.js';
 import type { RequestContext } from '../../common/request-context.js';
 import { AI_EXECUTION_PORT, DB } from '../../common/tokens.js';
 import { iso, newId } from '../../common/util.js';
