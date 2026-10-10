@@ -3,6 +3,8 @@
 // sign-out, session revocation, password change and rate limiting; its own endpoints are mounted under /v1/auth
 // (httpHandlers). POII keeps: mapping the Better Auth user to the owner actor, owner-only mode, the first-run
 // bootstrap from POII_OWNER_BOOTSTRAP_PASSWORD, and the CSRF header check on POII's own /v1 mutations.
+// #17: with POII_ACCESSLOBBY_ISSUER set, the AccessLobby plugin (accesslobby-oidc.auth-plugin.ts) adds AccessLobby
+// sign-in, explicit linking and back-channel logout to the same handler (ADR-0012).
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
@@ -20,8 +22,11 @@ import type { ActorRow, WorkspaceRow } from '../db/types.js';
 import type { IdentityPort, IdentityRequest, ResolvedIdentity } from '../ports/identity.js';
 import { assertNotCrossSite, clientAddress, header, originOf } from './identity-secrets.js';
 import { bootstrapOwnerWorkspace, isLoopbackUrl } from './local-owner.identity.js';
+// #17 AccessLobby OIDC
+import { ACCESSLOBBY_AUTH_PATHS, accessLobbyPlugin } from './accesslobby-oidc.auth-plugin.js';
+import { AccessLobbyClient } from './accesslobby-oidc.identity.js';
 
-type SignInSettings = Pick<Settings, 'ownerDisplayName' | 'webBaseUrl' | 'auth'>;
+type SignInSettings = Pick<Settings, 'ownerDisplayName' | 'webBaseUrl' | 'auth'> & Partial<Pick<Settings, 'accesslobby'>>; // #17
 type Owner = { actor: ActorRow; workspace: WorkspaceRow };
 type Log = (event: Record<string, unknown>) => void;
 type NodeMiddleware = (req: IncomingMessage, res: ServerResponse, next: (error?: unknown) => void) => void;
@@ -53,9 +58,16 @@ function createAuth(db: Db, settings: SignInSettings, hooks: {
   ownerActorId: () => Promise<string>;
   hasUser: () => Promise<boolean>;
   audit: (userId: string, action: string, details?: Record<string, unknown>) => Promise<void>;
+  /** #17: audit in the owner's workspace, attributed to the user's actor when given. */
+  auditOwner: (action: string, details: Record<string, unknown>, userId?: string) => Promise<void>;
   log: Log;
 }) {
   const webOrigin = originOf(settings.webBaseUrl);
+  // #17 AccessLobby OIDC: its plugin and HTTP paths only when POII_ACCESSLOBBY_ISSUER is configured.
+  const accessLobby = settings.accesslobby
+    ? accessLobbyPlugin({ db, client: new AccessLobbyClient(settings.accesslobby), audit: hooks.auditOwner, log: hooks.log })
+    : undefined;
+  const httpPaths: ReadonlySet<string> = accessLobby ? new Set([...HTTP_AUTH_PATHS, ...ACCESSLOBBY_AUTH_PATHS]) : HTTP_AUTH_PATHS;
   return betterAuth({
     appName: 'POII',
     baseURL: settings.auth.apiBaseUrl,
@@ -108,7 +120,7 @@ function createAuth(db: Db, settings: SignInSettings, hooks: {
       disableCSRFCheck: false,
       ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] },
     },
-    plugins: [username()],
+    plugins: accessLobby ? [username(), accessLobby] : [username()],
     hooks: {
       before: createAuthMiddleware(async ctx => {
         // Server-side auth.api calls (the bootstrap) carry no request and are trusted.
@@ -119,7 +131,7 @@ function createAuth(db: Db, settings: SignInSettings, hooks: {
         if (ctx.path.startsWith('/sign-up')) {
           throw APIError.from('FORBIDDEN', { code: 'SIGN_UP_DISABLED', message: 'This install has a single owner; sign-up is not available' });
         }
-        if (!HTTP_AUTH_PATHS.has(ctx.path)) throw APIError.from('NOT_FOUND', { code: 'NOT_FOUND', message: 'Not found' });
+        if (!httpPaths.has(ctx.path)) throw APIError.from('NOT_FOUND', { code: 'NOT_FOUND', message: 'Not found' });
         if (ctx.path === '/sign-in/username' && !(await hooks.hasUser())) {
           throw APIError.from('CONFLICT', {
             code: 'SIGNIN_NOT_CONFIGURED', message: 'No password is set up yet: set POII_OWNER_BOOTSTRAP_PASSWORD and restart the API',
@@ -177,6 +189,7 @@ export class BetterAuthIdentity implements IdentityPort {
       ownerActorId: async () => (await this.owner()).actor.id,
       hasUser: () => this.hasUser(),
       audit: (userId, action) => this.auditUser(userId, action),
+      auditOwner: (action, details, userId) => this.auditOwner(action, details, userId), // #17
       log: this.log,
     });
   }
@@ -294,6 +307,22 @@ export class BetterAuthIdentity implements IdentityPort {
     });
     this.log({ event: 'identity.owner_password_bootstrapped', login: this.settings.auth.ownerLogin.toLowerCase() });
     return owner;
+  }
+
+  /** #17: an audit event in the owner's workspace, attributed to the user's actor when one is given and still exists. */
+  private async auditOwner(action: string, details: Record<string, unknown>, userId?: string): Promise<void> {
+    try {
+      const owner = await this.ensureReady();
+      const row = userId
+        ? (await this.db.orm.select({ actor }).from(authUser).innerJoin(actor, eq(actor.id, authUser.actorId)).where(eq(authUser.id, userId)).limit(1))[0]
+        : undefined;
+      await this.db.orm.insert(auditEvent).values({
+        id: newId(), workspaceId: row?.actor.workspaceId ?? owner.workspace.id, actorId: row?.actor.id ?? null, action,
+        targetType: 'actor', targetId: row?.actor.id ?? owner.actor.id, details,
+      });
+    } catch (error) {
+      this.log({ event: 'identity.audit_failed', action, message: String(error) });
+    }
   }
 
   private async auditUser(userId: string, action: string): Promise<void> {
