@@ -2,6 +2,10 @@ name: Risk classification
 on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled, ready_for_review]
+  # A gated PR passes only once the owner's approving review exists on its head commit, so the check
+  # re-runs when a review is submitted, edited or dismissed.
+  pull_request_review:
+    types: [submitted, edited, dismissed]
 permissions:
   contents: write
   pull-requests: write
@@ -26,9 +30,13 @@ jobs:
           script: |
             const fs = require('fs');
             const policy = JSON.parse(fs.readFileSync('.github/release-policy/risk-classes.json', 'utf8'));
+            const codeowners = fs.readFileSync('.github/CODEOWNERS', 'utf8');
             const { owner, repo } = context.repo;
-            const number = context.payload.pull_request.number;
+            const pr = context.payload.pull_request;
+            const number = pr.number;
             const files = await github.paginate(github.rest.pulls.listFiles, { owner, repo, pull_number: number, per_page: 100 });
+            // The three functions below are the same code as .github/release-policy/{check-coverage,owner-approval}.mjs;
+            // the tests there assert it. They are inlined because the base branch may not have the module yet.
             const globToRegex = glob => {
               const escaped = glob.replace(/[.+^${}()|[\]\\]/g, '\\$&');
               const pattern = escaped
@@ -39,6 +47,46 @@ jobs:
                 .replace(/\u0001/g, '.*');
               return new RegExp(`^${pattern}$`);
             };
+            const approvalStatus = (reviews, approvers, headSha) => {
+              const latest = new Map();
+              for (const review of reviews) {
+                const login = review.user?.login;
+                if (!login || review.user?.type === 'Bot') continue;
+                const state = String(review.state).toUpperCase();
+                if (state === 'COMMENTED' || state === 'PENDING') continue;
+                latest.set(login, { state, commitId: review.commit_id ?? null });
+              }
+              const short = sha => (typeof sha === 'string' && sha.length >= 7 ? sha.slice(0, 7) : String(sha));
+              const approved = [];
+              const missing = [];
+              for (const login of approvers) {
+                const review = latest.get(login);
+                if (!review) missing.push({ login, reason: 'no review' });
+                else if (review.state !== 'APPROVED') missing.push({ login, reason: `latest review is ${review.state}` });
+                else if (review.commitId !== headSha) missing.push({ login, reason: `approved ${short(review.commitId)}, head is ${short(headSha)}` });
+                else approved.push(login);
+              }
+              return { approved, missing };
+            };
+            const approversOf = (policy, codeowners) => {
+              const valid = login => typeof login === 'string' && /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/.test(login);
+              let approvers = Array.isArray(policy.approvers) ? policy.approvers : [];
+              if (approvers.length === 0) {
+                const logins = new Set();
+                for (const line of String(codeowners).split('\n')) {
+                  const rule = line.replace(/#.*/, '').trim();
+                  if (!rule) continue;
+                  for (const owner of rule.split(/\s+/).slice(1)) {
+                    if (owner.startsWith('@') && !owner.includes('/') && !owner.includes('[')) logins.add(owner.slice(1));
+                  }
+                }
+                approvers = [...logins];
+              }
+              if (approvers.length === 0 || !approvers.every(valid)) {
+                throw new Error('No valid approver login: risk-classes.json needs an "approvers" list (or CODEOWNERS must name a user)');
+              }
+              return approvers;
+            };
             const gatedClasses = new Map();
             for (const file of files) {
               for (const rule of policy.gated) {
@@ -48,7 +96,7 @@ jobs:
                 }
               }
             }
-            const labels = context.payload.pull_request.labels.map(label => label.name);
+            const labels = pr.labels.map(label => label.name);
             const raisedByLabel = labels.includes('risk:gated');
             const gated = gatedClasses.size > 0 || raisedByLabel;
             const risk = gated ? 'gated' : 'routine';
@@ -70,7 +118,21 @@ jobs:
             }
             if (raisedByLabel) summary += '- raised to gated by label\n';
             if (!gated) summary += 'No gated path touched. Auto-merge is enabled once required checks pass.\n';
-            else summary += '\nGated: waits for the owner\'s explicit approval (see docs/release-policy.md). Labels cannot lower this.\n';
+            else {
+              // Gated: this required check fails until every approver named by the base-branch policy has an
+              // approving review on the current head commit. Labels, comments and the agent bot cannot satisfy it.
+              const approvers = approversOf(policy, codeowners);
+              const reviews = await github.paginate(github.rest.pulls.listReviews, { owner, repo, pull_number: number, per_page: 100 });
+              const status = approvalStatus(reviews, approvers, pr.head.sha);
+              summary += `\nGated: needs an approving review on head \`${pr.head.sha.slice(0, 7)}\` by ${approvers.map(a => `@${a}`).join(', ')} (see docs/release-policy.md). Labels cannot lower this.\n`;
+              if (status.missing.length) {
+                for (const m of status.missing) summary += `- @${m.login}: ${m.reason}\n`;
+                summary += '\n**classify fails** until the approval exists. The chat phrase is the record; the GitHub review is the gate.\n';
+                core.setFailed(`Gated PR without the required approval: ${status.missing.map(m => `${m.login} (${m.reason})`).join('; ')}`);
+              } else {
+                summary += `- approved on this head by ${status.approved.map(a => `@${a}`).join(', ')}\n`;
+              }
+            }
             await core.summary.addRaw(summary).write();
             core.setOutput('risk', risk);
       - name: Enable auto-merge for routine PRs
@@ -83,7 +145,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh pr merge --auto --squash "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}"
       - name: Disable auto-merge for gated PRs
-        if: steps.classify.outputs.risk == 'gated'
+        if: always() && steps.classify.outputs.risk == 'gated'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh pr merge --disable-auto "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" || true

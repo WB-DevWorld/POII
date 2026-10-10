@@ -1,6 +1,9 @@
 {
-  "version": 2,
-  "description": "Path-based risk classification for POII pull requests. A PR touching any gated path is gated. Labels can raise a PR to gated, never lower it. Unclassifiable changes are gated. Changing this file is itself gated. Version 2 (2026-10-10) widens every class to where the code actually lives; sensitive-areas.json and check-coverage.mjs fail CI when a sensitive file is not matched here.",
+  "version": 3,
+  "description": "Path-based risk classification for POII pull requests. A PR touching any gated path is gated. Labels can raise a PR to gated, never lower it. Unclassifiable changes are gated. Changing this file is itself gated. Version 2 (2026-10-10) widens every class to where the code actually lives; sensitive-areas.json and check-coverage.mjs fail CI when a sensitive file is not matched here. Version 3 (2026-10-10): `approvers` names the owner login; the classify check fails on every gated PR until each approver has an approving review on the PR head commit (owner-approval.mjs); AGENTS.md and SOURCE-OF-TRUTH.md join the release class.",
+  "approvers": [
+    "wbdevworld"
+  ],
   "gated": [
     {
       "class": "identity-auth-permissions-tokens",
@@ -177,7 +180,9 @@
         "compose.dokploy.yaml",
         "infra/releases/**",
         "infra/scripts/**",
-        "infra/github/**"
+        "infra/github/**",
+        "AGENTS.md",
+        "SOURCE-OF-TRUTH.md"
       ]
     }
   ],

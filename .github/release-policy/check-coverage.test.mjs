@@ -80,6 +80,9 @@ const mustBeGated = [
   '.github/CODEOWNERS',
   'compose.dokploy.yaml',
   'docs/release-policy.md',
+  'AGENTS.md',
+  'SOURCE-OF-TRUTH.md',
+  '.github/release-policy/owner-approval.mjs',
   'infra/scripts/forbidden-material.sh',
   'infra/github/ruleset-protect-main.bot.json',
 ];
