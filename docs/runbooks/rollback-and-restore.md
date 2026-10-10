@@ -26,4 +26,6 @@ Use only for data loss or corruption, after the owner's explicit go-ahead in cha
 
 ## 3. Restore drill (before production activation)
 
-Restore the latest staging backup into an empty, isolated environment and run the Playwright smoke and the context-pack export against it. Record pass/fail, measured time and the backup id in `CURRENT-WORK.md`. The drill is a prerequisite for the owner's activation phrase.
+How backups are taken, what they contain and the local restore drill (`bash infra/scripts/restore-drill.sh`, also run in CI) are in [backup-and-restore-drill.md](backup-and-restore-drill.md). The local drill proves the format and the runner on the public fixtures; it does not replace this one.
+
+Before production activation: restore the latest staging backup (the document named by `latest.json` at the staging target) into an empty, isolated environment (fresh database, migrations applied, `POST /v1/restore`), check the restored counts against the pointer's counts, then run the Playwright smoke and the context-pack export against it. Record pass/fail, measured time and the backup object key in `CURRENT-WORK.md`. The drill is a prerequisite for the owner's activation phrase.
