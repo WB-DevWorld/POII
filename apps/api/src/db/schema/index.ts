@@ -217,3 +217,4 @@ export const exportRun = pgTable('export_run', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   createdByActorId: uuid('created_by_actor_id').notNull().references(() => actor.id),
 });
+export * from './ai.js'; // #13 AI

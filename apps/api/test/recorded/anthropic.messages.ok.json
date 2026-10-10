@@ -1,0 +1,29 @@
+{
+  "_mocked": "MOCKED: hand-written, not captured from a live provider (no API keys exist yet). Shape follows the provider documentation read on 2026-10-10. Offsets refer to fixtures/decision-chain.md.",
+  "status": 200,
+  "body": {
+    "id": "msg_mocked_01",
+    "type": "message",
+    "role": "assistant",
+    "model": "claude-opus-5-5",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "",
+        "signature": "mocked"
+      },
+      {
+        "type": "text",
+        "text": "{\"candidates\":[{\"kind\":\"decision\",\"title\":\"Lanternfish uses BullMQ on the existing Redis for release one\",\"body\":\"Stated by Mara on 2026-03-04; to be revisited if cross-language consumers appear.\",\"quote\":\"Decision: Lanternfish uses BullMQ on the existing Redis for release one.\",\"startChar\":782,\"endChar\":854},{\"kind\":\"decision\",\"title\":\"Lanternfish moves to NATS JetStream for order routing from release two\",\"body\":\"Replaces the BullMQ decision of 4 March.\",\"quote\":\"Decision: Lanternfish moves to NATS JetStream for order routing from release two.\",\"startChar\":1009,\"endChar\":1090},{\"kind\":\"question\",\"title\":\"Should BullMQ be compared with RabbitMQ?\",\"body\":\"\",\"quote\":\"Please also compare BullMQ since we already run Redis.\",\"startChar\":400,\"endChar\":454},{\"kind\":\"fact\",\"title\":\"Invented quote that is not in the document\",\"body\":\"\",\"quote\":\"Lanternfish uses Kafka.\",\"startChar\":0,\"endChar\":23}]}"
+      }
+    ],
+    "stop_reason": "end_turn",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 1834,
+      "output_tokens": 412,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0
+    }
+  }
+}

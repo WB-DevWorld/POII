@@ -1,0 +1,12 @@
+{
+  "_mocked": "MOCKED: hand-written, not captured from a live provider (no API keys exist yet). Shape follows the provider documentation read on 2026-10-10. Offsets refer to fixtures/decision-chain.md. Authentication error envelope.",
+  "status": 401,
+  "body": {
+    "type": "error",
+    "error": {
+      "type": "authentication_error",
+      "message": "invalid x-api-key"
+    },
+    "request_id": "req_mocked"
+  }
+}

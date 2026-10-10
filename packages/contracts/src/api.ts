@@ -390,3 +390,106 @@ export type BackupDocument = z.infer<typeof BackupDocument>;
 export type SearchHit = z.infer<typeof SearchHit>;
 export type ExportRunView = z.infer<typeof ExportRunView>;
 export type ManifestSource = z.infer<typeof ManifestSource>;
+
+// #13 AI ----------------------------------------------------------------------------------------------
+// AI-assisted candidate extraction (ADR-0007). Two steps: preview shows exactly the text that would be sent;
+// execute sends only that text. Sources and records that are never-send-to-AI are refused (409 ai_not_allowed).
+
+export const aiProviders = ['anthropic', 'openai'] as const;
+export const AiProvider = z.enum(aiProviders);
+export type AiProvider = z.infer<typeof AiProvider>;
+
+export const AiPreviewRequest = z.object({
+  sourceId: Id,
+  /** Defaults to the source's current revision. */
+  revisionId: Id.optional(),
+  /** Defaults to the whole revision. */
+  startChar: z.number().int().nonnegative().optional(),
+  endChar: z.number().int().positive().optional(),
+  /** Existing records sent as "already recorded" context. */
+  recordIds: z.array(Id).max(20).default([]),
+  provider: AiProvider.optional(),
+});
+export type AiPreviewRequest = z.infer<typeof AiPreviewRequest>;
+
+export const AiPreviewResponse = z.object({
+  previewId: Id,
+  provider: AiProvider,
+  model: z.string(),
+  /** Exactly what will be sent as the single user message, byte for byte. */
+  promptText: z.string(),
+  promptSha256: z.string(),
+  sourceId: Id,
+  revisionId: Id,
+  startChar: z.number().int().nonnegative(),
+  endChar: z.number().int().positive(),
+  recordIds: z.array(Id),
+  inputTokensEstimate: z.number().int().nonnegative(),
+  maxOutputTokens: z.number().int().positive(),
+  /** Upper estimate (estimated input plus the maximum output); this amount is reserved against the cap on execute. */
+  estimatedCostUsd: z.number().nonnegative(),
+  remainingCapUsd: z.number().nonnegative(),
+  monthlyCapUsd: z.number().nonnegative(),
+  expiresAt: IsoTime,
+});
+export type AiPreviewResponse = z.infer<typeof AiPreviewResponse>;
+
+export const AiExecuteRequest = z.object({ previewId: Id });
+export type AiExecuteRequest = z.infer<typeof AiExecuteRequest>;
+
+export const AiOutcome = z.enum(['ok', 'malformed', 'refused', 'truncated', 'provider_error', 'network_error']);
+export type AiOutcome = z.infer<typeof AiOutcome>;
+
+export const AiExecuteResponse = z.object({
+  previewId: Id,
+  provider: AiProvider,
+  model: z.string(),
+  outcome: AiOutcome,
+  /** Readable problems (malformed output, dropped candidates, provider errors). Never contains prompt text. */
+  errors: z.array(z.string()),
+  /** The candidate records created (reviewState candidate, statementMode ai_extracted). Never confirmed. */
+  records: z.array(RecordSummary),
+  usage: z.object({
+    inputTokens: z.number().int().nonnegative().nullable(),
+    outputTokens: z.number().int().nonnegative().nullable(),
+    reservedUsd: z.number().nonnegative(),
+    costUsd: z.number().nonnegative(),
+    /** True when the cost comes from the provider's reported usage. */
+    reconciled: z.boolean(),
+  }),
+});
+export type AiExecuteResponse = z.infer<typeof AiExecuteResponse>;
+
+export const AiUsageProvider = z.object({
+  provider: AiProvider,
+  capUsd: z.number().nonnegative(),
+  spentUsd: z.number().nonnegative(),
+  reservedUsd: z.number().nonnegative(),
+  remainingUsd: z.number().nonnegative(),
+  calls: z.number().int().nonnegative(),
+});
+export const AiUsageResponse = z.object({
+  /** Calendar month in UTC, YYYY-MM. */
+  month: z.string().regex(/^\d{4}-\d{2}$/),
+  providers: z.array(AiUsageProvider),
+});
+export type AiUsageResponse = z.infer<typeof AiUsageResponse>;
+
+export const AiStatusResponse = z.object({
+  enabled: z.boolean(),
+  defaultProvider: AiProvider.nullable(),
+  providers: z.array(z.object({
+    provider: AiProvider,
+    configured: z.boolean(),
+    model: z.string(),
+    reason: z.string().nullable(),
+    monthlyCapUsd: z.number().nonnegative(),
+    pricing: z.object({ inputUsdPerMTok: z.number(), outputUsdPerMTok: z.number() }).nullable(),
+  })),
+  previewTtlSeconds: z.number().int().positive(),
+  maxInputChars: z.number().int().positive(),
+  maxOutputTokens: z.number().int().positive(),
+  logRequestText: z.boolean(),
+});
+export type AiStatusResponse = z.infer<typeof AiStatusResponse>;
+// end #13 AI ------------------------------------------------------------------------------------------
