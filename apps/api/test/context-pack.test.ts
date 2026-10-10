@@ -40,7 +40,6 @@ const sAllowed = id(1);
 const sNever = id(2);
 const sArchived = id(3);
 const sDeleted = id(4);
-const sOther = id(5);
 
 function input(destination: 'person' | 'ai', extra: Partial<ContextPackInput> = {}): ContextPackInput {
   return {

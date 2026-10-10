@@ -25,7 +25,9 @@ export function ActionForm({ action, children, className, testId, ...rest }: Pro
     if (pending) return;
     const form = event.currentTarget;
     const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
-    const data = new FormData(form, submitter ?? undefined);
+    // Same as FormData(form, submitter): include the clicked button's name and value.
+    const data = new FormData(form);
+    if (submitter?.name) data.append(submitter.name, submitter.value);
     startTransition(() => formAction(data));
   };
   return (
