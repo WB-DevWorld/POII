@@ -7,6 +7,7 @@ import type { Settings } from '../config.js';
 import type { Db } from '../db/client.js';
 import { actor, auditEvent, workspace } from '../db/schema/index.js';
 import { newId } from '../common/util.js';
+import type { ActorRow, WorkspaceRow } from '../db/types.js';
 import type { IdentityPort, IdentityRequest, ResolvedIdentity } from '../ports/identity.js';
 
 export const OWNER_WORKSPACE_NAME = 'Owner workspace';
@@ -49,40 +50,48 @@ export class LocalOwnerIdentity implements IdentityPort {
   }
 
   private bootstrap(): Promise<ResolvedIdentity> {
-    return this.db.orm.transaction(async tx => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('poii.local-owner.bootstrap'))`);
-      let ws = (await tx.select().from(workspace).orderBy(asc(workspace.createdAt), asc(workspace.id)).limit(1))[0];
-      const created: string[] = [];
-      if (!ws) {
-        ws = (await tx.insert(workspace).values({ id: newId(), name: OWNER_WORKSPACE_NAME }).returning())[0]!;
-        created.push('workspace');
-      }
-      let system = (await tx.select().from(actor)
-        .where(and(eq(actor.workspaceId, ws.id), eq(actor.kind, 'system')))
-        .orderBy(asc(actor.createdAt), asc(actor.id)).limit(1))[0];
-      if (!system) {
-        system = (await tx.insert(actor).values({
-          id: newId(), workspaceId: ws.id, kind: 'system', displayName: 'POII system', authority: null, details: {},
-        }).returning())[0]!;
-        created.push('system');
-      }
-      let owner = (await tx.select().from(actor)
-        .where(and(eq(actor.workspaceId, ws.id), eq(actor.kind, 'person'), eq(actor.authority, 'owner'), isNull(actor.revokedAt)))
-        .orderBy(asc(actor.createdAt), asc(actor.id)).limit(1))[0];
-      if (!owner) {
-        owner = (await tx.insert(actor).values({
-          id: newId(), workspaceId: ws.id, kind: 'person', displayName: this.settings.ownerDisplayName, authority: 'owner',
-          details: { identityAdapter: 'local-owner' },
-        }).returning())[0]!;
-        created.push('owner');
-      }
-      if (created.length) {
-        await tx.insert(auditEvent).values({
-          id: newId(), workspaceId: ws.id, actorId: system.id, action: 'identity.bootstrap', targetType: 'workspace',
-          targetId: ws.id, details: { adapter: this.name, created },
-        });
-      }
-      return { actor: owner, workspace: ws };
-    });
+    return bootstrapOwnerWorkspace(this.db, this.settings.ownerDisplayName, this.name).then(r => ({ ...r, via: 'local-owner' as const }));
   }
+}
+
+/**
+ * Creates the single workspace, its system actor and the owner person on first use (shared by the local
+ * identity adapters). Serialized by an advisory lock and idempotent.
+ */
+export function bootstrapOwnerWorkspace(db: Db, ownerDisplayName: string, adapterName: string): Promise<{ actor: ActorRow; workspace: WorkspaceRow }> {
+  return db.orm.transaction(async tx => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('poii.local-owner.bootstrap'))`);
+    let ws = (await tx.select().from(workspace).orderBy(asc(workspace.createdAt), asc(workspace.id)).limit(1))[0];
+    const created: string[] = [];
+    if (!ws) {
+      ws = (await tx.insert(workspace).values({ id: newId(), name: OWNER_WORKSPACE_NAME }).returning())[0]!;
+      created.push('workspace');
+    }
+    let system = (await tx.select().from(actor)
+      .where(and(eq(actor.workspaceId, ws.id), eq(actor.kind, 'system')))
+      .orderBy(asc(actor.createdAt), asc(actor.id)).limit(1))[0];
+    if (!system) {
+      system = (await tx.insert(actor).values({
+        id: newId(), workspaceId: ws.id, kind: 'system', displayName: 'POII system', authority: null, details: {},
+      }).returning())[0]!;
+      created.push('system');
+    }
+    let owner = (await tx.select().from(actor)
+      .where(and(eq(actor.workspaceId, ws.id), eq(actor.kind, 'person'), eq(actor.authority, 'owner'), isNull(actor.revokedAt)))
+      .orderBy(asc(actor.createdAt), asc(actor.id)).limit(1))[0];
+    if (!owner) {
+      owner = (await tx.insert(actor).values({
+        id: newId(), workspaceId: ws.id, kind: 'person', displayName: ownerDisplayName, authority: 'owner',
+        details: { identityAdapter: adapterName },
+      }).returning())[0]!;
+      created.push('owner');
+    }
+    if (created.length) {
+      await tx.insert(auditEvent).values({
+        id: newId(), workspaceId: ws.id, actorId: system.id, action: 'identity.bootstrap', targetType: 'workspace',
+        targetId: ws.id, details: { adapter: adapterName, created },
+      });
+    }
+    return { actor: owner, workspace: ws };
+  });
 }

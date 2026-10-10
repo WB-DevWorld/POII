@@ -26,16 +26,9 @@ type ExecuteInput = z.output<typeof AiExecuteRequest>;
 
 const PROVIDER_LABEL: Record<AiProviderName, string> = { anthropic: 'Anthropic', openai: 'OpenAI' };
 
-/**
- * TODO(integrator, #13): executing spends provider budget, which is a new capability ("ai_execute") that
- * authorization.ts does not have yet. Until it does, only a person with authority may execute; agent
- * tokens may preview (propose) but never spend.
- */
+/** Executing spends provider budget: the `ai_execute` capability (authorization.ts) belongs to a person with authority only; tokens may preview, never spend. */
 export function requireAiExecute(who: AuthorizableActor): void {
-  requireCapability(who, 'propose');
-  if (who.kind !== 'person' || !who.authority) {
-    throw new AppError(403, 'authority_required', 'Sending to an AI provider spends budget and needs a person with authority (capability: ai_execute)');
-  }
+  requireCapability(who, 'ai_execute');
 }
 
 @Injectable()

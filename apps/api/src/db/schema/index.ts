@@ -221,3 +221,7 @@ export * from './ai.js'; // #13 AI
 
 // #16 ops
 export * from './ops.js';
+
+// #14 auth and tokens
+export * from './identity.js';
+export * from './auth.js';

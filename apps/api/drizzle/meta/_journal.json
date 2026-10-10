@@ -29,6 +29,13 @@
       "when": 1791600466976,
       "tag": "0003_ops_backup_runs",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791606780576,
+      "tag": "0004_better_auth_and_owner_tokens",
+      "breakpoints": true
     }
   ]
 }

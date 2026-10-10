@@ -98,8 +98,37 @@ ADR-0007. Off unless `POII_AI_ENABLED=true` **and** a provider key is set (`ANTH
 - Every candidate's span is checked against the sent text: the model's `quote` must occur there (wrong offsets are repaired from the quote; an invented quote drops the candidate with an error).
 - The audit log records `ai.previewed`, `ai.preview_refused`, `ai.execute_refused`, `ai.cap_reached` and `ai.executed` with the prompt sha256 and the ids, never prompt or answer text. With `POII_AI_LOG_REQUEST_TEXT=true` the `ai.previewed` event also stores the prompt text (only ever AI-allowed material reaches a prompt).
 - Caps: `POII_AI_MONTHLY_CAP_USD_ANTHROPIC`, `POII_AI_MONTHLY_CAP_USD_OPENAI` (default 20 each), per provider per calendar month in UTC, across the instance. A reservation that is never settled (process killed mid-call) keeps counting.
-- Capability: executing spends provider budget. Until `authorization.ts` has an `ai_execute` capability, the AI module allows it only for a person with authority (`403 authority_required` otherwise); agent tokens may preview but not execute.
+- Capability: executing spends provider budget. `ai_execute` is a capability in `authorization.ts`: a person with authority holds it; agent tokens (any scope) do not (`403 authority_required`), so a token may preview but never execute.
 - `POST /v1/ai/preview` is never stored as an Idempotency-Key replay (its reply carries source text); `POST /v1/ai/execute` is.
 - Known limits: `ai_usage` and `ai_preview` are outside backup and restore (a restored install starts the month's ledger from zero); expired and unused previews are not pruned yet; a reservation left by a process killed mid-call keeps counting until the month ends.
 - Error codes: `ai_disabled` (503), `ai_not_allowed`, `cap_reached`, `preview_expired`, `preview_used`, `preview_stale`, `provider_unavailable` (409), `invalid_span`, `span_too_large`, `too_many_records` (400).
 <!-- end #13 AI -->
+<!-- #14 auth and tokens -->
+## Sign-in and owner tokens (ADR-0009)
+
+The identity adapter is chosen with `POII_IDENTITY_ADAPTER`: `local-owner` (default; every request without credentials is the owner) or `local-signin` (password sign-in backed by Better Auth; every `/v1` request outside `/v1/auth` needs a session cookie or a token, else `401 unauthenticated`). Owner tokens work with both adapters.
+
+**Sessions (local-signin).** `/v1/auth/*` is Better Auth 1.7 itself (mounted with `toNodeHandler`), not a Nest controller, so its bodies and errors are Better Auth's: errors are `{ code, message }` (`AuthErrorBody`), not POII's `{ error, message, requestId }`. Under `local-owner` nothing is mounted there (404). Sign-in sets `poii.session_token` (`__Secure-poii.session_token` with the `Secure` flag unless `WEB_BASE_URL` is loopback; HttpOnly, SameSite=Lax, Path=/, Max-Age = `POII_SESSION_TTL_HOURS`); the value is Better Auth's signed session token. Sessions live in PostgreSQL and are read on every request (no cookie cache), so sign-out and revocation take effect on the next request; a session is never extended by use. Better Auth refuses a cookie-carrying `/v1/auth` POST whose `Origin` is missing or not `WEB_BASE_URL`'s origin (`403 INVALID_ORIGIN` / `MISSING_OR_NULL_ORIGIN`). Every cookie-authenticated mutation of a POII endpoint must send `x-poii-csrf: 1`; a request whose `Origin` is not `WEB_BASE_URL`'s origin, or whose `Sec-Fetch-Site` is `cross-site` or `same-site`, is refused with `403 csrf_rejected`. Any `/v1/auth` request carrying an `Authorization` header is `403 TOKEN_NOT_ALLOWED`.
+
+Rate limiting (Better Auth, in process memory): per client address, sign-in and change-password allow 3 requests per 10 s (then `429` with `X-Retry-After` seconds), every other `/v1/auth` path 100 per 10 s. The client address is the TCP peer, or the right-most `X-Forwarded-For` entry only when `POII_TRUST_PROXY=true`.
+
+| Method | Path | Body → Response | Notes |
+| --- | --- | --- | --- |
+| POST | `/v1/auth/sign-in/username` | `SignInRequest` `{ username, password }` → `SignInResponse` + `Set-Cookie` | `401 INVALID_USERNAME_OR_PASSWORD` (wrong password or unknown username; the username is case-insensitive); `409 SIGNIN_NOT_CONFIGURED` while no sign-in user exists; `429` when rate limited. |
+| POST | `/v1/auth/sign-out` | `{}` → `{ success: true }`, cookie cleared | Deletes this session. |
+| POST | `/v1/auth/revoke-sessions` | `{}` → `{ status: true }` | Deletes every session of the owner, this one included. `401` without a session. |
+| POST | `/v1/auth/change-password` | `ChangePasswordRequest` `{ currentPassword, newPassword, revokeOtherSessions: true }` → `{ token, user }` + `Set-Cookie` | `400 INVALID_PASSWORD` (current password wrong), `400 PASSWORD_TOO_SHORT` (under 12) / `PASSWORD_TOO_LONG` (over 128). Every session is deleted and the caller gets a fresh one in `Set-Cookie`. |
+| GET | `/v1/auth/get-session` | → `{ session, user }` or `null` | The current session. |
+| GET/POST | `/v1/auth/list-sessions`, `/v1/auth/revoke-session`, `/v1/auth/revoke-other-sessions` | Better Auth's bodies | Available; not used by the web app. |
+| POST | `/v1/auth/sign-up/email` | → `403 SIGN_UP_DISABLED` | Owner-only mode: the owner is created by the bootstrap, never over HTTP. |
+
+Every other Better Auth endpoint (email sign-in, social sign-in, password reset, email verification, user update or deletion, account linking) answers `404`.
+
+**Owner tokens.** Present as `Authorization: Bearer poii_…`. A token acts as its own `agent_token` actor (attribution) tied to the owner. Scopes: `read` (sources, records, views, search, actors, context packs) and `propose` (also create sources, revisions, candidates, evidence, edits of candidates and superseding candidates). A token never confirms, rejects, deletes, restores, backs up, changes `aiAllowed` or archives (`403 authority_required`), manages tokens (`403 owner_required`) or signs in or manages sessions (`403 TOKEN_NOT_ALLOWED` on `/v1/auth`). A `read` token calling a propose route gets `403 scope_required`. An unknown or malformed token is `401 invalid_token`, an expired one `401 token_expired`, a revoked one `401 token_revoked`; an `Authorization` header never falls back to the owner.
+
+| Method | Path | Body → Response | Notes |
+| --- | --- | --- | --- |
+| POST | `/v1/tokens` | `CreateTokenRequest` → `CreatedTokenResponse` | 201. Owner only. The secret appears in this response only; it is stored as SHA-256 and never kept in the Idempotency-Key store. `expiresAt` must be at least a minute and at most 366 days ahead (`400 invalid_expiry`). |
+| GET | `/v1/tokens` | → `TokenView[]` | Owner only. `status`: active, expired, revoked. |
+| DELETE | `/v1/tokens/:id` | → 204 | Owner only. Immediate; revoking twice is a no-op. |
+<!-- end #14 auth and tokens -->

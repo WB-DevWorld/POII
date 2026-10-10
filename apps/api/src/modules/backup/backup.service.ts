@@ -279,7 +279,11 @@ export class BackupService {
       + await n(tx.select({ n: count() }).from(record).where(eq(record.workspaceId, ws)))
       + await n(tx.select({ n: count() }).from(sourceTombstone).where(eq(sourceTombstone.workspaceId, ws)))
       + await n(tx.select({ n: count() }).from(exportRun).where(eq(exportRun.workspaceId, ws)))
-      + await n(tx.select({ n: count() }).from(actor).where(and(eq(actor.workspaceId, ws), ne(actor.id, ctx.actor.id), ne(actor.kind, 'system'))));
+      + await n(tx.select({ n: count() }).from(actor).where(and(
+        eq(actor.workspaceId, ws), ne(actor.id, ctx.actor.id), ne(actor.kind, 'system'),
+        // #14 auth and tokens: an owner token's own actor is access configuration, not data; it cascades with the workspace.
+        sql`NOT (${actor.kind} = 'agent_token' AND EXISTS (SELECT 1 FROM owner_token WHERE owner_token.actor_id = ${actor.id}))`,
+      )));
     if (busy > 0) throw conflict('workspace_not_empty', 'Restore only goes into an empty workspace');
   }
 }

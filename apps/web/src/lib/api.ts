@@ -1,4 +1,6 @@
 // Server-side access to the POII API. The web app never talks to the database directly.
+// Every call forwards the browser's session token (local-signin), the CSRF header and the web app's Origin (ADR-0009).
+import { PATH_HEADER, safeNextPath, sessionHeaders, SESSION_COOKIE } from './session';
 export const apiBase = () => process.env.API_INTERNAL_URL ?? 'http://localhost:3001';
 
 /** The API's error body: `{ error, message, requestId, details? }`. */
@@ -27,9 +29,36 @@ export class ApiError extends Error {
 
 export type JsonInit = Omit<RequestInit, 'body'> & { body?: unknown; idempotencyKey?: string };
 
-function buildInit(init: JsonInit): RequestInit {
+/** `/signin`, with `next` set to the page being rendered when the proxy told us which one it is. */
+export async function signInPath(): Promise<string> {
+  let next = '/';
+  try {
+    const { headers } = await import('next/headers');
+    next = safeNextPath((await headers()).get(PATH_HEADER));
+  } catch (error) {
+    const { unstable_rethrow } = await import('next/navigation');
+    unstable_rethrow(error);
+  }
+  return next === '/' ? '/signin' : `/signin?next=${encodeURIComponent(next)}`;
+}
+
+/** The browser's session cookie, when called inside a request (pages, actions, route handlers); else undefined. */
+export async function currentSession(): Promise<string | undefined> {
+  try {
+    const { cookies } = await import('next/headers');
+    return (await cookies()).get(SESSION_COOKIE)?.value;
+  } catch (error) {
+    // Inside Next, rethrow its own control-flow errors (dynamic rendering bail-out); outside a request
+    // (unit tests, scripts) there is simply no session.
+    const { unstable_rethrow } = await import('next/navigation');
+    unstable_rethrow(error);
+    return undefined;
+  }
+}
+
+async function buildInit(init: JsonInit): Promise<RequestInit> {
   const { body, idempotencyKey, headers, ...rest } = init;
-  const extra: Record<string, string> = {};
+  const extra: Record<string, string> = sessionHeaders(await currentSession());
   if (idempotencyKey) extra['idempotency-key'] = idempotencyKey;
   return {
     ...rest,
@@ -40,7 +69,7 @@ function buildInit(init: JsonInit): RequestInit {
 }
 
 export async function apiJson<T>(path: string, init: JsonInit = {}): Promise<T> {
-  const response = await fetch(`${apiBase()}${path}`, buildInit(init));
+  const response = await fetch(`${apiBase()}${path}`, await buildInit(init));
   const text = await response.text();
   let body: unknown = null;
   if (text) {
@@ -55,14 +84,17 @@ export async function apiJson<T>(path: string, init: JsonInit = {}): Promise<T> 
 }
 
 /** Raw response, for route handlers that proxy a download. */
-export function apiRaw(path: string, init: JsonInit = {}): Promise<Response> {
-  return fetch(`${apiBase()}${path}`, buildInit(init));
+export async function apiRaw(path: string, init: JsonInit = {}): Promise<Response> {
+  return fetch(`${apiBase()}${path}`, await buildInit(init));
 }
 
 /** A readable problem: the API's error code and message, or a connection failure. */
 export type Problem = { code: string; message: string; status?: number; requestId?: string; issues?: string[] };
 
 export function toProblem(error: unknown): Problem {
+  if (error instanceof ApiError && error.status === 401) {
+    return { code: error.code, message: 'You are signed out. Sign in again to continue.', status: 401, requestId: error.requestId };
+  }
   if (error instanceof ApiError) {
     const issues = issueLines((error.body as Partial<ApiErrorBody> | null)?.details);
     return { code: error.code, message: error.detail, status: error.status, requestId: error.requestId, ...(issues.length ? { issues } : {}) };
@@ -85,13 +117,22 @@ export function issueLines(details: unknown, max = 6): string[] {
 
 export type Result<T> = { ok: true; data: T } | { ok: false; problem: Problem };
 
-/** Like apiJson, but never throws: pages render a notice instead of crashing. */
+/**
+ * Like apiJson, but never throws: pages render a notice instead of crashing. A 401 (signed out under
+ * local-signin) sends the browser to the sign-in page instead.
+ */
 export async function apiTry<T>(path: string, init: JsonInit = {}): Promise<Result<T>> {
+  let result: Result<T>;
   try {
-    return { ok: true, data: await apiJson<T>(path, init) };
+    result = { ok: true, data: await apiJson<T>(path, init) };
   } catch (error) {
-    return { ok: false, problem: toProblem(error) };
+    result = { ok: false, problem: toProblem(error) };
   }
+  if (!result.ok && result.problem.status === 401) {
+    const { redirect } = await import('next/navigation');
+    redirect(await signInPath());
+  }
+  return result;
 }
 
 /** Builds a query string from defined, non-empty values. */
