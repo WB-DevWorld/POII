@@ -1,6 +1,6 @@
 {
-  "version": 3,
-  "description": "Path-based risk classification for POII pull requests. A PR touching any gated path is gated. Labels can raise a PR to gated, never lower it. Unclassifiable changes are gated. Changing this file is itself gated. Version 2 (2026-10-10) widens every class to where the code actually lives; sensitive-areas.json and check-coverage.mjs fail CI when a sensitive file is not matched here. Version 3 (2026-10-10): `approvers` names the owner login; the classify check fails on every gated PR until each approver has an approving review on the PR head commit (owner-approval.mjs); AGENTS.md and SOURCE-OF-TRUTH.md join the release class.",
+  "version": 4,
+  "description": "Path-based risk classification for POII pull requests. A PR touching any gated path is gated. Labels can raise a PR to gated, never lower it. Unclassifiable changes are gated. Changing this file is itself gated. Version 2 (2026-10-10) widens every class to where the code actually lives; sensitive-areas.json and check-coverage.mjs fail CI when a sensitive file is not matched here. Version 3 (2026-10-10): `approvers` names the owner login; the classify check fails on every gated PR until each approver has an approving review on the PR head commit (owner-approval.mjs); AGENTS.md and SOURCE-OF-TRUTH.md join the release class. Version 4 (2026-10-10): scripts/** (the bot token script and the Claude Code hook) joins the release class; it was described as gated since version 2 but no glob matched it. apps/mcp/** (the MCP server that holds an owner token) joins the identity class.",
   "approvers": [
     "wbdevworld"
   ],
@@ -64,7 +64,8 @@
         "apps/web/src/**/*logout*",
         "apps/web/src/**/*password*",
         "apps/web/src/**/*credential*",
-        "apps/web/src/**/*permission*"
+        "apps/web/src/**/*permission*",
+        "apps/mcp/**"
       ]
     },
     {
@@ -182,7 +183,8 @@
         "infra/scripts/**",
         "infra/github/**",
         "AGENTS.md",
-        "SOURCE-OF-TRUTH.md"
+        "SOURCE-OF-TRUTH.md",
+        "scripts/**"
       ]
     }
   ],

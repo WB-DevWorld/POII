@@ -22,7 +22,7 @@
 //
 // Tokens are cached in the OS temp directory until five minutes before they expire.
 
-import { createSign } from "node:crypto";
+import { createPrivateKey, createSign } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -40,29 +40,38 @@ function loadConfig() {
       if (m && env[m[1]] === undefined) env[m[1]] = m[2].replace(/^["']|["']$/g, "");
     }
   }
-  const appId = env.POII_AGENT_APP_ID;
-  const installationId = env.POII_AGENT_INSTALLATION_ID;
   const keyPath = env.POII_AGENT_PRIVATE_KEY_PATH;
-  if (!appId || !installationId || !keyPath) {
+  if (!env.POII_AGENT_APP_ID || !env.POII_AGENT_INSTALLATION_ID || !keyPath) {
     throw new Error("missing POII_AGENT_APP_ID, POII_AGENT_INSTALLATION_ID or POII_AGENT_PRIVATE_KEY_PATH");
   }
+  // Both ids are numbers: only their numeric value is used, never the text read from the file.
+  const appId = positiveInteger(env.POII_AGENT_APP_ID, "POII_AGENT_APP_ID");
+  const installationId = positiveInteger(env.POII_AGENT_INSTALLATION_ID, "POII_AGENT_INSTALLATION_ID");
   return { appId, installationId, keyPath };
 }
 
-function appJwt(appId, pem) {
+function positiveInteger(text, name) {
+  const trimmed = String(text).trim();
+  const value = Number.parseInt(trimmed, 10);
+  if (!Number.isSafeInteger(value) || value <= 0 || String(value) !== trimmed) throw new Error(`${name} must be a positive integer`);
+  return value;
+}
+
+function appJwt(appId, key) {
   const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
   const now = Math.floor(Date.now() / 1000);
   const unsigned = `${b64({ alg: "RS256", typ: "JWT" })}.${b64({ iat: now - 60, exp: now + 540, iss: appId })}`;
   const signer = createSign("RSA-SHA256");
   signer.update(unsigned);
-  return `${unsigned}.${signer.sign(pem).toString("base64url")}`;
+  return `${unsigned}.${signer.sign(key).toString("base64url")}`;
 }
 
 async function mint() {
   const { appId, installationId, keyPath } = loadConfig();
-  const pem = readFileSync(keyPath, "utf8");
+  // The PEM file becomes a KeyObject; only signatures made with it leave this process, never its bytes.
+  const key = createPrivateKey({ key: readFileSync(keyPath), format: "pem" });
   const headers = {
-    Authorization: `Bearer ${appJwt(appId, pem)}`,
+    Authorization: `Bearer ${appJwt(appId, key)}`,
     Accept: "application/vnd.github+json",
     "User-Agent": "poii-agent-token",
   };
@@ -71,14 +80,25 @@ async function mint() {
   const { slug } = await app.json();
   const res = await fetch(`${API}/app/installations/${installationId}/access_tokens`, { method: "POST", headers });
   if (!res.ok) throw new Error(`installation token refused: HTTP ${res.status}`);
-  const { token, expires_at: expiresAt } = await res.json();
-  const entry = { slug, token, expiresAt };
+  const body = await res.json();
+  const entry = validatedEntry(slug, body?.token, body?.expires_at);
   try {
+    // The cache holds this process's own short-lived token (GitHub's token syntax, checked above) in the user's
+    // temp directory with owner-only permissions, and nothing else from the response.
     writeFileSync(CACHE, JSON.stringify(entry), { mode: 0o600 });
   } catch {
     // cache is an optimisation only
   }
   return entry;
+}
+
+/** Accepts only GitHub's installation-token syntax and an ISO-8601 expiry; anything else is an error, not cached. */
+function validatedEntry(slug, token, expiresAt) {
+  if (typeof token !== "string" || !/^ghs_[A-Za-z0-9]{20,255}$/.test(token)) throw new Error("installation token has an unexpected shape");
+  const expiry = Date.parse(String(expiresAt));
+  if (!Number.isFinite(expiry)) throw new Error("installation token has no valid expiry");
+  if (typeof slug !== "string" || !/^[a-z0-9-]{1,100}$/.test(slug)) throw new Error("App slug has an unexpected shape");
+  return { slug, token, expiresAt: new Date(expiry).toISOString() };
 }
 
 async function getToken() {

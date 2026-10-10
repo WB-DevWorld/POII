@@ -9,7 +9,7 @@ import {
   updateRecordAction,
 } from '@/app/actions';
 import { ActionForm, SubmitButton } from '@/components/ActionForm';
-import { AiBadge, AnchorBadge, Attribution, KindBadge, ReviewBadge, StatusBadge, TimeValue } from '@/components/Badges';
+import { AiBadge, AnchorBadge, KindBadge, ReviewBadge, StatusBadge, TimeValue } from '@/components/Badges';
 import { PageNotice } from '@/components/PageNotice';
 import { ProblemNotice } from '@/components/ProblemNotice';
 import { RecordFields, TimeInputs } from '@/components/RecordFields';

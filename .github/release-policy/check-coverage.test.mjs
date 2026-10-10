@@ -44,6 +44,7 @@ const mustBeGated = [
   'apps/web/src/app/tokens/page.tsx',
   'apps/web/src/lib/session.ts',
   'apps/web/src/proxy.ts',
+  'apps/mcp/src/index.ts',
   // deletion and retention
   'apps/api/src/modules/sources/sources.service.ts',
   'apps/api/src/modules/retention/retention.service.ts',
@@ -84,6 +85,8 @@ const mustBeGated = [
   'SOURCE-OF-TRUTH.md',
   '.github/release-policy/owner-approval.mjs',
   'infra/scripts/forbidden-material.sh',
+  'scripts/agent-token.mjs',
+  'scripts/poii-hook.mjs',
   'infra/github/ruleset-protect-main.bot.json',
 ];
 
