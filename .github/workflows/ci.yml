@@ -34,7 +34,7 @@ jobs:
       API_INTERNAL_URL: http://127.0.0.1:3001
       WEB_BASE_URL: http://127.0.0.1:3000
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Scan the full history for secrets
@@ -43,7 +43,7 @@ jobs:
             git /repo --config /repo/.gitleaks.toml --redact --no-banner --exit-code 1
       - name: Check for forbidden private material and environment files
         run: bash infra/scripts/forbidden-material.sh
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '24.19.0'
       - name: Release-policy coverage (every sensitive file must be gated)
@@ -66,7 +66,7 @@ jobs:
         run: pnpm --filter @poii/web exec playwright install --with-deps chromium
       - name: Core-journey smoke (Playwright)
         run: pnpm --filter @poii/web smoke
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: poii-smoke-report
@@ -116,8 +116,8 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/dependency-review-action@v4
+      - uses: actions/checkout@v7
+      - uses: actions/dependency-review-action@v5
         with:
           fail-on-severity: high
           comment-summary-in-pr: on-failure
