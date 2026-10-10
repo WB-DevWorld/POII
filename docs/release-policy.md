@@ -27,7 +27,7 @@ Gated changes go through the `production-gated` GitHub environment with the owne
 - New spending, provider code, or changes to the caps.
 - Licence or repository visibility.
 - Changes to other peers.
-- The release workflows, the risk classifier, the coverage check, the approval check, `CODEOWNERS`, the Compose file, `AGENTS.md`, `SOURCE-OF-TRUTH.md` and this policy itself. Their initial setup was approved by the commission; every later change is gated.
+- The release workflows, the risk classifier, the coverage check, the approval check, `CODEOWNERS`, the Compose file, `AGENTS.md`, `SOURCE-OF-TRUTH.md`, the agent scripts under `scripts/` and this policy itself. Their initial setup was approved by the commission; every later change is gated.
 - The first production activation.
 
 "First implementation" of a gated area is not an exemption. Only the initial setup of the release workflows, the risk classifier and this policy was pre-approved. Every other gated change waits until the owner types `POII GATED APPROVED: PR #N` in chat **and** approves the PR on GitHub.

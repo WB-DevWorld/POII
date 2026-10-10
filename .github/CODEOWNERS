@@ -17,3 +17,4 @@
 /apps/api/src/db/ @wbdevworld
 /compose.dokploy.yaml @wbdevworld
 /infra/ @wbdevworld
+/scripts/ @wbdevworld

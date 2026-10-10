@@ -84,6 +84,8 @@ const mustBeGated = [
   'SOURCE-OF-TRUTH.md',
   '.github/release-policy/owner-approval.mjs',
   'infra/scripts/forbidden-material.sh',
+  'scripts/agent-token.mjs',
+  'scripts/poii-hook.mjs',
   'infra/github/ruleset-protect-main.bot.json',
 ];
 

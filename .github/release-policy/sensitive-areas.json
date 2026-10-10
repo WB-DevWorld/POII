@@ -1,6 +1,6 @@
 {
-  "version": 2,
-  "description": "Where sensitive code actually lives, as case-insensitive regular expressions on repository paths. check-coverage.mjs (run in CI) fails when a tracked file matches an area but no gated rule in risk-classes.json matches it. Adding a file in one of these areas therefore forces a classifier update in the same PR. Changing this file is itself gated. Version 2 (2026-10-10) adds AGENTS.md and SOURCE-OF-TRUTH.md to release-enforcement.",
+  "version": 3,
+  "description": "Where sensitive code actually lives, as case-insensitive regular expressions on repository paths. check-coverage.mjs (run in CI) fails when a tracked file matches an area but no gated rule in risk-classes.json matches it. Adding a file in one of these areas therefore forces a classifier update in the same PR. Changing this file is itself gated. Version 2 (2026-10-10) adds AGENTS.md and SOURCE-OF-TRUTH.md to release-enforcement. Version 3 (2026-10-10) adds scripts/ to release-enforcement.",
   "areas": [
     {
       "area": "identity-session-token",
@@ -75,7 +75,8 @@
         "^infra/(releases|scripts|github)/",
         "^compose\\.dokploy\\.yaml$",
         "^docs/release-policy\\.md$",
-        "^(AGENTS|SOURCE-OF-TRUTH)\\.md$"
+        "^(AGENTS|SOURCE-OF-TRUTH)\\.md$",
+        "^scripts/"
       ],
       "exclude": []
     }
