@@ -87,6 +87,19 @@ function serialize(row: Record<string, unknown>): Record<string, unknown> {
 
 type Counts = RestoreResponse['restored'];
 
+/** How a backup was triggered and where its document goes (#16 backup runner). Defaults: HTTP, copy kept in storage. */
+export interface BackupOptions {
+  /** Recorded in the audit event, e.g. `http` or `backup-cli`. */
+  via?: string;
+  /**
+   * Keep a copy of the document in the storage port under `backups/<exportRunId>.json` (default true). The scheduled
+   * runner writes to its own target with its own retention and passes false, so the storage volume does not grow.
+   */
+  storeCopy?: boolean;
+  /** Extra manifest fields describing where the document went (target and object key). */
+  destination?: Record<string, unknown>;
+}
+
 @Injectable()
 export class BackupService {
   constructor(
@@ -95,7 +108,8 @@ export class BackupService {
     @Inject(IDENTITY_PORT) private readonly identity: IdentityPort,
   ) {}
 
-  async backup(ctx: RequestContext): Promise<BackupDocument> {
+  async backup(ctx: RequestContext, options: BackupOptions = {}): Promise<BackupDocument> {
+    const { via = 'http', storeCopy = true, destination } = options;
     // A backup carries everything, including never-send-to-AI material: it needs a person with authority.
     requireCapability(ctx.actor, 'confirm');
     const ws = ctx.workspace.id;
@@ -152,19 +166,19 @@ export class BackupService {
     };
     const counts = countsOf(doc);
     const contentSha256 = sha256Hex(canonicalJson(doc));
-    const storageKey = `backups/${exportRunId}.json`;
-    await this.storage.put(storageKey, Buffer.from(JSON.stringify(doc), 'utf8'));
+    const storageKey = storeCopy ? `backups/${exportRunId}.json` : null;
+    if (storageKey) await this.storage.put(storageKey, Buffer.from(JSON.stringify(doc), 'utf8'));
     try {
       await this.db.orm.transaction(async tx => {
         await tx.insert(exportRun).values({
           id: exportRunId, workspaceId: ws, kind: 'backup', formatVersion: BACKUP_VERSION, selection: {},
-          manifest: { format: BACKUP_FORMAT, formatVersion: BACKUP_VERSION, workspaceId: ws, counts }, contentSha256, storageKey,
-          createdByActorId: ctx.actor.id,
+          manifest: { format: BACKUP_FORMAT, formatVersion: BACKUP_VERSION, workspaceId: ws, counts, ...(destination ? { destination } : {}) },
+          contentSha256, storageKey, createdByActorId: ctx.actor.id,
         });
-        await audit(tx, ctx, 'workspace.backup', 'export_run', exportRunId, { counts, contentSha256 });
+        await audit(tx, ctx, 'workspace.backup', 'export_run', exportRunId, { counts, contentSha256, via, ...(destination ? { destination } : {}) });
       });
     } catch (error) {
-      await this.storage.delete(storageKey).catch(() => undefined);
+      if (storageKey) await this.storage.delete(storageKey).catch(() => undefined);
       throw error;
     }
     return doc;
@@ -266,7 +280,7 @@ export class BackupService {
   }
 }
 
-function countsOf(doc: BackupDocument): Counts {
+export function countsOf(doc: BackupDocument): Counts {
   return {
     sources: doc.sources.length, revisions: doc.revisions.length, records: doc.records.length, approvals: doc.approvals.length,
     evidence: doc.evidence.length, versions: doc.versions.length, actors: doc.actors.length, tombstones: doc.tombstones.length,

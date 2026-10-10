@@ -218,3 +218,6 @@ export const exportRun = pgTable('export_run', {
   createdByActorId: uuid('created_by_actor_id').notNull().references(() => actor.id),
 });
 export * from './ai.js'; // #13 AI
+
+// #16 ops
+export * from './ops.js';
