@@ -141,7 +141,7 @@ export interface ProviderCallResult {
   /** Usage as the provider reported it; null when the provider reported none. */
   usage: { inputTokens: number; outputTokens: number } | null;
   httpStatus: number | null;
-  /** True when the provider rejected the request with a client error before generating (nothing billed). */
+  /** True when the provider answered non-2xx with its error envelope (rejected, nothing generated or billed). */
   notBilled: boolean;
 }
 

@@ -13,6 +13,7 @@ import { anchorCandidates, CANDIDATES_JSON_SCHEMA, parseCandidatesText } from '.
 import { createAiExecution, providerStatuses } from '../src/ai/factory.js';
 import { costMicroUsd, estimateInputTokens, microToUsd, PRICES, priceOf } from '../src/ai/pricing.js';
 import { buildPrompt, documentMarker } from '../src/ai/prompt.js';
+import { splitsSurrogatePair } from '../src/ai/disclosure.js';
 import { GatedAiExecution } from '../src/ai/execution.js';
 import { AppError } from '../src/common/errors.js';
 import { aiConfig, config } from '../src/config.js';
@@ -80,6 +81,14 @@ test('pricing: micro-USD from tokens, long-context tier, every default model pri
   const haiku = priceOf('anthropic', 'claude-haiku-5-5')!;
   assert.equal(costMicroUsd(haiku, 100_001, 0), Math.ceil(100_001 * 0.5), 'over 100K input tokens: higher tier');
   assert.equal(priceOf('openai', 'gpt-unknown'), null);
+  const sol = priceOf('openai', 'gpt-6.1-sol')!;
+  assert.equal(costMicroUsd(sol, 272_000, 1000), 272_000 * 2 + 1000 * 10, 'at 272K input tokens: listed rates');
+  assert.equal(costMicroUsd(sol, 272_001, 1000), 272_001 * 4 + 1000 * 15, 'above 272K: 2x input, 1.5x output');
+  for (const [model, price] of Object.entries(PRICES.openai)) {
+    assert.deepEqual(price.longContext, {
+      overInputTokens: 272_000, inputUsdPerMTok: price.inputUsdPerMTok * 2, outputUsdPerMTok: price.outputUsdPerMTok * 1.5,
+    }, model);
+  }
   const defaults = aiConfig({});
   assert.ok(PRICES.anthropic[defaults.anthropic.model]);
   assert.ok(PRICES.openai[defaults.openai.model]);
@@ -95,6 +104,8 @@ test('config: AI defaults, caps and validation', () => {
   assert.equal(s.openai.monthlyCapUsd, 20);
   assert.equal(s.logRequestText, false);
   assert.equal(s.previewTtlSeconds, 900);
+  assert.equal(s.maxOutputTokens, 8000);
+  assert.equal(s.timeoutMs, 600_000, 'a long generation is not aborted client-side while the provider bills');
   const custom = aiConfig({
     POII_AI_PROVIDER_DEFAULT: 'openai', OPENAI_API_KEY: ' k ', POII_AI_OPENAI_MODEL: 'gpt-6-luna', POII_AI_MONTHLY_CAP_USD_OPENAI: '5.5',
     POII_AI_LOG_REQUEST_TEXT: 'true', POII_AI_PREVIEW_TTL_SECONDS: '60',
@@ -184,6 +195,18 @@ test('Anthropic client (MOCKED responses): malformed text, error envelope, netwo
   assert.equal(unauthorized.notBilled, true);
   assert.match(unauthorized.errors[0]!, /authentication_error/);
 
+  stub.enqueue(recorded('anthropic.error.529.json'));
+  const overloaded = await client.extract('p', opts);
+  assert.equal(overloaded.outcome, 'provider_error');
+  assert.equal(overloaded.httpStatus, 529);
+  assert.equal(overloaded.notBilled, true, 'an error envelope, even 529 or 5xx, releases the reservation');
+  assert.match(overloaded.errors[0]!, /overloaded_error/);
+
+  stub.enqueue({ _mocked: 'MOCKED', status: 502, body: '<html>bad gateway</html>' });
+  const proxy = await client.extract('p', opts);
+  assert.equal(proxy.outcome, 'provider_error');
+  assert.equal(proxy.notBilled, false, 'no provider envelope: unknown whether billed, reservation kept');
+
   stub.enqueue(new TypeError('fetch failed'));
   const offline = await client.extract('p', opts);
   assert.equal(offline.outcome, 'network_error');
@@ -215,4 +238,17 @@ test('OpenAI client (MOCKED responses): request shape, the prompt is the whole i
   const refused = await client.extract(prompt, opts);
   assert.equal(refused.outcome, 'refused');
   assert.deepEqual(refused.candidates, []);
+  stub.enqueue({ _mocked: 'MOCKED: OpenAI server error envelope', status: 500, body: { error: { message: 'The server had an error', type: 'server_error', code: null } } });
+  const serverError = await client.extract(prompt, opts);
+  assert.equal(serverError.outcome, 'provider_error');
+  assert.equal(serverError.notBilled, true);
+});
+
+test('spans never split a UTF-16 surrogate pair', () => {
+  const text = 'a😀b';
+  assert.equal(splitsSurrogatePair(text, 0), false);
+  assert.equal(splitsSurrogatePair(text, 1), false);
+  assert.equal(splitsSurrogatePair(text, 2), true);
+  assert.equal(splitsSurrogatePair(text, 3), false);
+  assert.equal(splitsSurrogatePair(text, text.length), false);
 });

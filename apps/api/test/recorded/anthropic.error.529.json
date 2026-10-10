@@ -1,0 +1,12 @@
+{
+  "_mocked": "MOCKED: hand-written, not captured from a live provider (no API keys exist yet). Anthropic overloaded_error envelope (HTTP 529), shape from the provider documentation read on 2026-10-10.",
+  "status": 529,
+  "body": {
+    "type": "error",
+    "error": {
+      "type": "overloaded_error",
+      "message": "Overloaded"
+    },
+    "request_id": "req_mocked_529"
+  }
+}

@@ -32,6 +32,14 @@ export interface DisclosedMaterial {
   records: Array<ContextRecord & { id: string }>;
 }
 
+/** True when `offset` falls between the two halves of a UTF-16 surrogate pair. */
+export function splitsSurrogatePair(text: string, offset: number): boolean {
+  if (offset <= 0 || offset >= text.length) return false;
+  const before = text.charCodeAt(offset - 1);
+  const after = text.charCodeAt(offset);
+  return before >= 0xd800 && before <= 0xdbff && after >= 0xdc00 && after <= 0xdfff;
+}
+
 export const aiNotAllowed = (message: string, details: Record<string, unknown>) => new AppError(409, 'ai_not_allowed', message, details);
 
 export async function discloseForAi(exec: Exec, input: DisclosureRequest, maxInputChars: number): Promise<DisclosedMaterial> {
@@ -77,6 +85,11 @@ export async function discloseForAi(exec: Exec, input: DisclosureRequest, maxInp
   if (!Number.isInteger(startChar) || !Number.isInteger(endChar) || startChar < 0 || endChar <= startChar || endChar > revision.text.length) {
     throw badRequest('invalid_span', `Span ${startChar}-${endChar} is outside the revision text (length ${revision.text.length}) or empty`, {
       startChar, endChar, textLength: revision.text.length,
+    });
+  }
+  if (splitsSurrogatePair(revision.text, startChar) || splitsSurrogatePair(revision.text, endChar)) {
+    throw badRequest('invalid_span', `Span ${startChar}-${endChar} splits a character (a UTF-16 surrogate pair); move the boundary by one`, {
+      startChar, endChar,
     });
   }
   if (endChar - startChar > maxInputChars) {

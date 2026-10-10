@@ -2,7 +2,8 @@
 // A model that is not listed here cannot be used: the cap cannot be enforced without a price.
 //
 // Anthropic: https://platform.claude.com/docs/en/about-claude/pricing (read 2026-10-10)
-// OpenAI:    https://developers.openai.com/api/docs/pricing (read 2026-10-10; short-context rates, prompts up to 272K tokens)
+// OpenAI:    https://developers.openai.com/api/docs/pricing (read 2026-10-10). Listed rates apply to prompts up to 272K input
+//            tokens; above that the whole request costs 2x input and 1.5x output (openaiLong below).
 //
 // Cost in micro-USD of `n` tokens at `p` USD per million tokens is exactly n * p.
 import type { AiProviderName } from '../ports/ai-execution.js';
@@ -13,6 +14,12 @@ export interface ModelPrice {
   /** Higher rates once a prompt exceeds `overInputTokens` (the whole request is priced at the higher rate). */
   longContext?: { overInputTokens: number; inputUsdPerMTok: number; outputUsdPerMTok: number };
 }
+
+/** OpenAI long-context surcharge: above 272,000 input tokens, 2x input and 1.5x output for the whole request. */
+const openaiLong = (inputUsdPerMTok: number, outputUsdPerMTok: number): ModelPrice => ({
+  inputUsdPerMTok, outputUsdPerMTok,
+  longContext: { overInputTokens: 272_000, inputUsdPerMTok: inputUsdPerMTok * 2, outputUsdPerMTok: outputUsdPerMTok * 1.5 },
+});
 
 export const PRICES: Record<AiProviderName, Record<string, ModelPrice>> = {
   anthropic: {
@@ -28,13 +35,13 @@ export const PRICES: Record<AiProviderName, Record<string, ModelPrice>> = {
     'claude-fable-5-1': { inputUsdPerMTok: 10, outputUsdPerMTok: 50 },
   },
   openai: {
-    'gpt-6-astra': { inputUsdPerMTok: 10, outputUsdPerMTok: 50 },
-    'gpt-6.1-sol': { inputUsdPerMTok: 2, outputUsdPerMTok: 10 },
-    'gpt-6-sol': { inputUsdPerMTok: 2, outputUsdPerMTok: 10 },
-    'gpt-6-luna': { inputUsdPerMTok: 0.1, outputUsdPerMTok: 0.5 },
-    'gpt-5.6-sol': { inputUsdPerMTok: 4, outputUsdPerMTok: 20 },
-    'gpt-5.6-terra': { inputUsdPerMTok: 2, outputUsdPerMTok: 12 },
-    'gpt-5.6-luna': { inputUsdPerMTok: 0.2, outputUsdPerMTok: 1.2 },
+    'gpt-6-astra': openaiLong(10, 50),
+    'gpt-6.1-sol': openaiLong(2, 10),
+    'gpt-6-sol': openaiLong(2, 10),
+    'gpt-6-luna': openaiLong(0.1, 0.5),
+    'gpt-5.6-sol': openaiLong(4, 20),
+    'gpt-5.6-terra': openaiLong(2, 12),
+    'gpt-5.6-luna': openaiLong(0.2, 1.2),
   },
 };
 

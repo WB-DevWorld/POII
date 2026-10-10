@@ -30,7 +30,6 @@ const ResponseObject = z.object({
 
 const ErrorResponse = z.object({ error: z.object({ type: z.string().nullable().optional(), message: z.string().optional() }).passthrough() }).passthrough();
 
-const NOT_BILLED = new Set([400, 401, 403, 404, 413, 422, 429]);
 
 export class OpenAiAiExecution implements AiProviderClient {
   readonly provider = 'openai' as const;
@@ -77,7 +76,10 @@ export class OpenAiAiExecution implements AiProviderClient {
     if (!response.ok) {
       const err = ErrorResponse.safeParse(json);
       const detail = err.success ? `${err.data.error.type ?? 'error'}: ${(err.data.error.message ?? '').slice(0, 300)}` : 'no error body';
-      return failure('provider_error', `OpenAI answered ${response.status} (${detail}).`, response.status, NOT_BILLED.has(response.status));
+      // A non-2xx answer carrying the provider's error envelope (4xx, 5xx, 529 overloaded) means the request was
+      // rejected without a billed generation: the reservation is released. Without an envelope (a proxy page,
+      // say) it is unknown whether the provider processed it, so the reservation stays counted.
+      return failure('provider_error', `OpenAI answered ${response.status} (${detail}).`, response.status, err.success);
     }
     const parsed = ResponseObject.safeParse(json);
     if (!parsed.success) {

@@ -103,6 +103,7 @@ export function AiSendForm({ previewId, sourceId, providerLabel, startChar, endC
       <button type="submit" disabled={pending} aria-disabled={pending}>
         {pending ? 'Sending…' : `Send exactly this text to ${providerLabel}`}
       </button>
+      <p className="hint">Sent with a fixed output schema, the model name and the output-token limit; no other text.</p>
     </form>
   );
 }

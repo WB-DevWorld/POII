@@ -92,8 +92,8 @@ export function aiConfig(env: NodeJS.ProcessEnv = process.env): AiSettings {
     logRequestText: env.POII_AI_LOG_REQUEST_TEXT === 'true',
     previewTtlSeconds: numberEnv(env, 'POII_AI_PREVIEW_TTL_SECONDS', 900, 10, 86_400),
     maxInputChars: numberEnv(env, 'POII_AI_MAX_INPUT_CHARS', 100_000, 100, 2_000_000),
-    maxOutputTokens: numberEnv(env, 'POII_AI_MAX_OUTPUT_TOKENS', 16_000, 256, 128_000),
-    timeoutMs: numberEnv(env, 'POII_AI_TIMEOUT_MS', 120_000, 1_000, 900_000),
+    maxOutputTokens: numberEnv(env, 'POII_AI_MAX_OUTPUT_TOKENS', 8_000, 256, 128_000),
+    timeoutMs: numberEnv(env, 'POII_AI_TIMEOUT_MS', 600_000, 1_000, 900_000),
   };
 }
 // end #13 AI ------------------------------------------------------------------------------------------

@@ -247,6 +247,35 @@ describe('AI-assisted extraction (integration, MOCKED provider responses)', { sk
     assert.equal(stub.calls.length, calls);
   });
 
+  test('preview replies (they carry source text) are never stored for Idempotency-Key replay; execute stays idempotent', async () => {
+    const content = `Idempotency probe ${run}: Decision: keep replies out of storage.`;
+    const src = await paste(`Idempotency ${run}`, content);
+    const key = `ai-preview-${run}`;
+    const ids: string[] = [];
+    for (const path of ['/v1/ai/preview', '/v1/ai/preview', '/v1/AI/Preview', '/v1/ai/preview/']) {
+      const r = await c.post(path, { sourceId: src.id }, { 'idempotency-key': key });
+      if (r.status === 201) ids.push(AiPreviewResponse.parse(r.body).previewId);
+      else assert.equal(r.status, 404, `${path}: ${r.status}`);
+    }
+    assert.equal(ids.length, 4, 'case and trailing-slash variants reach the preview route and are excluded too');
+    assert.equal(new Set(ids).size, ids.length, 'every preview is fresh, never a stored replay');
+    const stored = await api.db.pool.query(`SELECT response::text AS r FROM idempotency_key WHERE key LIKE $1`, [`%:${key}`]);
+    assert.equal(stored.rowCount, 0);
+    const anywhere = await api.db.pool.query(`SELECT count(*)::int AS n FROM idempotency_key WHERE response::text LIKE $1`, ['%Idempotency probe%']);
+    assert.equal(anywhere.rows[0].n, 0, 'no source text in idempotency storage');
+
+    const execKey = `ai-execute-${run}`;
+    stub.enqueue(recorded('anthropic.messages.malformed.json'));
+    const calls = stub.calls.length;
+    const first = await c.post('/v1/ai/execute', { previewId: ids[0] }, { 'idempotency-key': execKey });
+    assert.equal(first.status, 200);
+    const replay = await c.post('/v1/ai/execute', { previewId: ids[0] }, { 'idempotency-key': execKey });
+    assert.equal(replay.status, 200);
+    assert.equal(replay.headers.get('idempotent-replay'), 'true');
+    assert.deepEqual(replay.body, first.body);
+    assert.equal(stub.calls.length, calls + 1, 'the replay sent nothing');
+  });
+
   test('previews expire', async () => {
     const src = await paste(`Expiry ${run}`, `Expiry probe ${run}: Decision: expire previews.`);
     const pv = AiPreviewResponse.parse((await preview({ sourceId: src.id })).body);
@@ -303,6 +332,14 @@ describe('AI-assisted extraction (integration, MOCKED provider responses)', { sk
     const failed = AiExecuteResponse.parse((await c.post('/v1/ai/execute', { previewId: pv2.previewId })).body);
     assert.equal(failed.outcome, 'provider_error');
     assert.equal(failed.usage.costUsd, 0);
+    // MOCKED 529 overloaded with the provider's error envelope: not billed, the reservation is released.
+    const pv3 = AiPreviewResponse.parse((await preview({ sourceId: src.id })).body);
+    stub.enqueue(recorded('anthropic.error.529.json'));
+    const overloaded = AiExecuteResponse.parse((await c.post('/v1/ai/execute', { previewId: pv3.previewId })).body);
+    assert.equal(overloaded.outcome, 'provider_error');
+    assert.equal(overloaded.usage.costUsd, 0);
+    const row = (await api.db.pool.query('SELECT state, actual_micro_usd FROM ai_usage WHERE preview_id = $1', [pv3.previewId])).rows[0];
+    assert.deepEqual(row, { state: 'settled', actual_micro_usd: '0' });
   });
 
   test('at the cap execute is refused with cap_reached, nothing is sent, and the manual path keeps working', async () => {
@@ -358,6 +395,12 @@ describe('AI-assisted extraction (integration, MOCKED provider responses)', { sk
     assert.equal((await preview({ sourceId: src.id, startChar: 5, endChar: 2 })).body.error, 'invalid_span');
     assert.equal((await preview({ sourceId: src.id, startChar: 0, endChar: 100_000 })).body.error, 'invalid_span');
     assert.equal((await preview({ sourceId: src.id, provider: 'mindmesh' })).body.error, 'validation_failed');
+    const emoji = await paste(`Emoji ${run}`, `Emoji ${run}: 😀 Decision: ship.`);
+    const at = emoji.content.indexOf('😀');
+    const split = await preview({ sourceId: emoji.id, startChar: at + 1, endChar: emoji.content.length });
+    assert.equal(split.status, 400);
+    assert.equal(split.body.error, 'invalid_span');
+    assert.equal((await preview({ sourceId: emoji.id, startChar: at, endChar: emoji.content.length })).status, 201);
   });
 });
 

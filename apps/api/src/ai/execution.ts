@@ -197,7 +197,7 @@ export class GatedAiExecution implements AiExecutionPort {
         id: usageId, workspaceId: ctx.workspace.id, actorId: ctx.actor.id, provider, model: reg.model, month, previewId,
         promptSha256: preview.promptSha256, estimateMicro: preview.estimatedCostMicroUsd, capMicro: reg.capMicro,
       });
-    }).catch(async error => {
+    }, { isolationLevel: 'read committed' }).catch(async error => {
       if (error instanceof AppError && error.code === 'cap_reached') {
         await audit(this.db.orm, ctx, 'ai.cap_reached', 'source', preview.sourceId, { previewId, provider, month, ...(error.details as Record<string, unknown>) });
       }
@@ -214,8 +214,8 @@ export class GatedAiExecution implements AiExecutionPort {
 
     const anchored = anchorCandidates(material.documentText, material.startChar, result.candidates);
     const errors = [...result.errors, ...anchored.errors];
-    // Reconcile: reported usage when there is some; nothing for a pre-generation client error; otherwise the
-    // reservation stays spent (unknown whether the provider billed it).
+    // Reconcile: reported usage when there is some; nothing when the provider rejected the request with its error
+    // envelope; otherwise (transport failure, timeout, no envelope) the reservation stays spent.
     const actualMicro = result.usage
       ? costMicroUsd(reg.price, result.usage.inputTokens, result.usage.outputTokens)
       : result.notBilled ? 0 : preview.estimatedCostMicroUsd;

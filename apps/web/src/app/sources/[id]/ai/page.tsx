@@ -51,8 +51,8 @@ export default async function AiPage({ params, searchParams }: { params: Params;
       <h1>AI-assisted extraction</h1>
       <p className="lede">
         An AI provider proposes candidate facts, requirements, decisions and questions from this source. Nothing is sent until you
-        press Send, and only the text shown in the preview is sent. Everything the provider returns stays a candidate until a person
-        confirms it.
+        press Send. The request then carries the text shown in the preview plus a fixed output schema, the model name and a token
+        limit, and no other text. Everything the provider returns stays a candidate until a person confirms it.
       </p>
     </>
   );
@@ -176,9 +176,18 @@ export default async function AiPage({ params, searchParams }: { params: Params;
         </>
       ) : null}
 
-      {preview?.ok ? (
+      {preview?.ok && preview.data.sourceId !== source.id ? (
+        <p className="notice danger" role="alert" data-testid="ai-preview-mismatch">
+          That preview belongs to another source, so it is not shown here. <a href={aiPageHref(source.id)}>Start over</a>.
+        </p>
+      ) : null}
+
+      {preview?.ok && preview.data.sourceId === source.id ? (
         <section data-testid="ai-preview">
-          <h2>2. Exactly what will be sent</h2>
+          <h2>2. Exactly the text that will be sent</h2>
+          <p className="hint">
+            The request carries this text plus a fixed output schema, the model name and the output-token limit, and no other text.
+          </p>
           <dl className="meta">
             <div>
               <dt>Provider and model</dt>
