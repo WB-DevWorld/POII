@@ -1,11 +1,15 @@
-# Protected policy, classification and release files: the owner reviews every change.
+# Protected policy, classification, governance and release files: the owner reviews every change.
 # The owner's GitHub handle is @wbdevworld (a user account). The organisation name is not a valid owner.
-# Code-owner review is not yet required by the ruleset; it switches on with the bot identity (docs/runbooks/bot-identity-switchover.md).
+# The `Protect main` ruleset requires code-owner review, so a PR touching these paths cannot merge until
+# the owner approves it on GitHub. For every gated PR (these paths or not) the `classify` check also fails
+# until that approval exists (.github/release-policy/owner-approval.mjs).
 /.github/release-policy/ @wbdevworld
 /.github/workflows/ @wbdevworld
 /.github/CODEOWNERS @wbdevworld
 /.github/dependabot.yml @wbdevworld
 /docs/release-policy.md @wbdevworld
+/AGENTS.md @wbdevworld
+/SOURCE-OF-TRUTH.md @wbdevworld
 /BUILD-BASELINE.md @wbdevworld
 /OWNERSHIP.md @wbdevworld
 /docs/adr/ @wbdevworld

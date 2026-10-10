@@ -19,9 +19,9 @@ node scripts/agent-token.mjs check
 
 All three answered `true`, `true` and the App slug with an expiry on 2026-10-10.
 
-## What remains (optional, gated PR)
+## Review gate on every gated PR (applied 2026-10-10)
 
-Make the `classify` check fail on a gated PR until an approving review by the owner exists on it. Until then a gated PR that touches no code-owner path is held only by the rule in `docs/release-policy.md`.
+The `classify` check fails on every gated PR until the owner's approving review exists on the PR's current head commit (`.github/release-policy/owner-approval.mjs`, imported by `risk-classify.yml` from the base branch). A gated PR that touches no code-owner path is therefore held by a required check, not only by the rule in `docs/release-policy.md`.
 
 ## If the key is rotated or the App is removed
 
