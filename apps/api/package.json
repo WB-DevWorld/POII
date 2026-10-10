@@ -11,7 +11,8 @@
     "migrate:generate": "drizzle-kit generate",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
-    "test": "node --import tsx --test test/*.test.ts"
+    "test": "node --import tsx --test test/*.test.ts",
+    "backup:run": "tsx src/backup-cli.ts"
   },
   "dependencies": {
     "@nestjs/common": "12.1.2",

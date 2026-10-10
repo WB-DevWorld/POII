@@ -71,6 +71,10 @@ Mutating requests may send `Idempotency-Key: <opaque>`; a retry with the same ke
 
 `GET /health/live` → `{ status, version }`. `GET /health/ready` → `{ status, version, aiEnabled }`, 503 when the database is unavailable.
 
+<!-- #16 ops -->
+`GET /health/version` → `HealthVersion`: `{ version, builtAt, node, migrations: { applied, latest }, backup }`. `version` is `GIT_SHA`; `builtAt` is `BUILD_TIME` or null; `migrations.applied` is the newest migration recorded in the database and `migrations.latest` the newest one shipped with the image (names without `.sql`; null when unknown); `backup` is `{ lastRunAt, lastTarget, lastStatus }` of the most recent backup run (`local` or `s3`; `running`, `succeeded` or `failed`) or null when none is recorded. Always 200 and `cache-control: no-store`; readiness never depends on any of it. See `docs/runbooks/backup-and-restore-drill.md`.
+<!-- /#16 ops -->
+
 ## Attribution rules and error codes
 
 - `statedRole: owner` requires `statedByActorId` to be the workspace owner (it defaults to the owner when omitted). `statedRole: assistant` requires an `ai_assistant` actor, and an `ai_assistant` actor can only be cited with role `assistant`. Violations return `400 attribution_mismatch`. `statementMode: ai_extracted` from a human caller returns `400 ai_extracted_not_allowed`.

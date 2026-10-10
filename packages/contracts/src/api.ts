@@ -493,3 +493,19 @@ export const AiStatusResponse = z.object({
 });
 export type AiStatusResponse = z.infer<typeof AiStatusResponse>;
 // end #13 AI ------------------------------------------------------------------------------------------
+// #16 ops
+/** GET /health/version: what is running. Informational; readiness never depends on it. */
+export const HealthVersion = z.object({
+  version: z.string(),
+  builtAt: z.string().nullable(),
+  node: z.string(),
+  /** Newest applied and newest shipped migration names (without `.sql`); null when unknown. */
+  migrations: z.object({ applied: z.string().nullable(), latest: z.string().nullable() }),
+  /** The most recent backup run, or null when none was recorded (or the record is unreadable). */
+  backup: z.object({
+    lastRunAt: IsoTime,
+    lastTarget: z.enum(['local', 's3']),
+    lastStatus: z.enum(['running', 'succeeded', 'failed']),
+  }).nullable(),
+});
+export type HealthVersion = z.infer<typeof HealthVersion>;
