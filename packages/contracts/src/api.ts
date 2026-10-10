@@ -579,3 +579,59 @@ export type TokenView = z.infer<typeof TokenView>;
 /** The only response that ever contains the secret. */
 export const CreatedTokenResponse = z.object({ token: TokenView, secret: z.string() });
 export type CreatedTokenResponse = z.infer<typeof CreatedTokenResponse>;
+// #17 AccessLobby OIDC (ADR-0012) -------------------------------------------------------------------
+// Better Auth plugin endpoints under /v1/auth/accesslobby (present only when POII_ACCESSLOBBY_ISSUER is set).
+// Errors use Better Auth's `{ code, message }` (AuthErrorBody), e.g. 403 NOT_LINKED, 503 ACCESSLOBBY_UNAVAILABLE.
+
+/** `GET /v1/auth/accesslobby/status`; `link` and `sessionVia` only with a session. */
+export const AccessLobbyStatus = z.object({
+  enabled: z.literal(true),
+  signedIn: z.boolean(),
+  link: z.object({
+    issuer: z.string(),
+    /** AccessLobby's durable person ID (`person.id` from its `GET /v1/me`). */
+    personId: z.string(),
+    linkedAt: IsoTime,
+    lastSignInAt: IsoTime.nullable(),
+  }).nullable(),
+  sessionVia: z.enum(['accesslobby', 'password']).nullable(),
+});
+export type AccessLobbyStatus = z.infer<typeof AccessLobbyStatus>;
+
+/** `POST /v1/auth/accesslobby/sign-in`; `next` is a same-site path to return to. `/link` takes `{}`. */
+export const AccessLobbySignInRequest = z.object({ next: z.string().max(512).optional() });
+export type AccessLobbySignInRequest = z.infer<typeof AccessLobbySignInRequest>;
+
+/** Reply of `/sign-in` and `/link`: AccessLobby's authorization URL and the browser binding (keep it in an HttpOnly cookie). */
+export const AccessLobbyFlowStarted = z.object({ url: z.url(), binding: z.string().regex(/^[A-Za-z0-9_-]{43}$/) });
+export type AccessLobbyFlowStarted = z.infer<typeof AccessLobbyFlowStarted>;
+
+/** `POST /v1/auth/accesslobby/callback`: the redirect's parameters plus the flow's binding. */
+export const AccessLobbyCallbackRequest = z.object({
+  state: z.string().min(1).max(512),
+  binding: z.string().min(1).max(128),
+  code: z.string().min(1).max(4096).optional(),
+  iss: z.string().max(1024).optional(),
+  error: z.string().max(200).optional(),
+});
+export type AccessLobbyCallbackRequest = z.infer<typeof AccessLobbyCallbackRequest>;
+
+/** Sign-in replies with the session in `Set-Cookie` (like the password sign-in); a link keeps the current session. */
+export const AccessLobbyCallbackResponse = z.discriminatedUnion('intent', [
+  z.object({ intent: z.literal('signin'), next: z.string() }),
+  z.object({ intent: z.literal('link') }),
+]);
+export type AccessLobbyCallbackResponse = z.infer<typeof AccessLobbyCallbackResponse>;
+
+/** `POST /v1/auth/accesslobby/unlink`: the local password, so disconnecting can never lock the owner out. */
+export const AccessLobbyUnlinkRequest = z.object({ password: z.string().min(1).max(128) });
+export type AccessLobbyUnlinkRequest = z.infer<typeof AccessLobbyUnlinkRequest>;
+
+/** `POST /v1/auth/accesslobby/sign-out-all`: every POII session ended; null when AccessLobby could not be reached. */
+export const AccessLobbySignOutAllResponse = z.object({ endSessionUrl: z.url().nullable() });
+export type AccessLobbySignOutAllResponse = z.infer<typeof AccessLobbySignOutAllResponse>;
+
+/** `POST /v1/auth/accesslobby/backchannel-logout` (form or JSON): 200 `{}` or 400 INVALID_LOGOUT_TOKEN. */
+export const AccessLobbyBackchannelLogoutRequest = z.object({ logout_token: z.string().min(1).max(16_384) });
+export type AccessLobbyBackchannelLogoutRequest = z.infer<typeof AccessLobbyBackchannelLogoutRequest>;
+// end #17 AccessLobby OIDC --------------------------------------------------------------------------

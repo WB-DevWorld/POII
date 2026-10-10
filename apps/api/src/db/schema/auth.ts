@@ -76,3 +76,40 @@ export const betterAuthSchema = {
 };
 
 export type AuthUserRow = typeof authUser.$inferSelect;
+
+// #17 AccessLobby OIDC (ADR-0012) -------------------------------------------------------------------
+// POII-owned tables (not Better Auth models). identity_link is the explicit, auditable mapping the AccessLobby
+// consumer contract v0.1 asks for: (issuer, sub, person.id) -> the owner's sign-in user and actor. It is
+// written only by the explicit "Connect AccessLobby" flow and removed only by "Disconnect" (password required).
+
+export const identityLink = pgTable('identity_link', {
+  id: uuid('id').primaryKey(),
+  /** The AccessLobby issuer exactly as configured and as named in the ID token's `iss`. */
+  issuer: text('issuer').notNull(),
+  /** The ID token's `sub`: the issuer's subject, not the durable person ID. */
+  subject: text('subject').notNull(),
+  /** AccessLobby's durable person ID from `GET /v1/me` (`person.id`). */
+  personId: text('person_id').notNull(),
+  authUserId: text('auth_user_id').notNull().references(() => authUser.id, { onDelete: 'cascade' }),
+  /** The POII actor at link time; set null when a restore replaces it and refreshed at the next AccessLobby sign-in. */
+  actorId: uuid('actor_id').references(() => actor.id, { onDelete: 'set null' }),
+  linkedAt: at('linked_at').notNull().defaultNow(),
+  lastSignInAt: at('last_sign_in_at'),
+}, table => [
+  uniqueIndex('identity_link_issuer_subject_unique').on(table.issuer, table.subject),
+  uniqueIndex('identity_link_person_unique').on(table.personId),
+  uniqueIndex('identity_link_user_unique').on(table.authUserId),
+]);
+
+/** POII sessions created by an AccessLobby sign-in: the ID token (for `id_token_hint`) and the issuer session `sid`. */
+export const accessLobbySession = pgTable('accesslobby_session', {
+  sessionId: text('session_id').primaryKey().references(() => authSession.id, { onDelete: 'cascade' }),
+  issuer: text('issuer').notNull(),
+  subject: text('subject').notNull(),
+  sid: text('sid'),
+  idToken: text('id_token').notNull(),
+  createdAt: at('created_at').notNull().defaultNow(),
+}, table => [index('accesslobby_session_sid_idx').on(table.issuer, table.sid)]);
+
+export type IdentityLinkRow = typeof identityLink.$inferSelect;
+// end #17 AccessLobby OIDC --------------------------------------------------------------------------
