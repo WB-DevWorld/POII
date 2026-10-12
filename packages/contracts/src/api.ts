@@ -579,3 +579,54 @@ export type TokenView = z.infer<typeof TokenView>;
 /** The only response that ever contains the secret. */
 export const CreatedTokenResponse = z.object({ token: TokenView, secret: z.string() });
 export type CreatedTokenResponse = z.infer<typeof CreatedTokenResponse>;
+// #19 agent instructions export ----------------------------------------------------------------------
+// A rebuildable projection of the current-decisions view into AGENTS.md and CLAUDE.md (docs/agent-instructions-export.md).
+// Stored as an export_run whose manifest carries `format: "poii.agent-instructions"`.
+
+export const AGENT_INSTRUCTIONS_FORMAT = 'poii.agent-instructions';
+export const AGENT_INSTRUCTIONS_VERSION = 1;
+export const agentInstructionFileNames = ['AGENTS.md', 'CLAUDE.md'] as const;
+export const AgentInstructionFileName = z.enum(agentInstructionFileNames);
+export type AgentInstructionFileName = z.infer<typeof AgentInstructionFileName>;
+
+/** `POST /v1/exports/agent-instructions` takes no options: the selection is always the current-decisions view. */
+export const AgentInstructionsRequest = z.object({}).strict();
+export type AgentInstructionsRequest = z.infer<typeof AgentInstructionsRequest>;
+
+export const AgentInstructionsFile = z.object({
+  name: AgentInstructionFileName,
+  /** UTF-8 byte length of the whole file (header and body). */
+  bytes: z.number().int().positive(),
+  /** SHA-256 of the whole file; differs per run because the header carries the run id and time. */
+  sha256: z.string(),
+});
+export type AgentInstructionsFile = z.infer<typeof AgentInstructionsFile>;
+
+export const AgentInstructionsIncluded = z.object({
+  recordId: Id,
+  kind: RecordKind,
+  title: z.string(),
+  /** Number of evidence spans cited for this record. */
+  citations: z.number().int().nonnegative(),
+});
+export const AgentInstructionsWithheld = z.object({
+  recordId: Id,
+  kind: RecordKind,
+  title: z.string(),
+  reason: z.literal('never_send_to_ai'),
+});
+
+export const AgentInstructionsResponse = z.object({
+  format: z.literal(AGENT_INSTRUCTIONS_FORMAT),
+  formatVersion: z.literal(AGENT_INSTRUCTIONS_VERSION),
+  exportRunId: Id,
+  generatedAt: IsoTime,
+  workspace: z.object({ id: Id, name: z.string() }),
+  /** SHA-256 of the canonical body (everything after the `<!-- poii:body -->` line); equal for equal decisions. */
+  contentSha256: z.string(),
+  files: z.array(AgentInstructionsFile),
+  included: z.array(AgentInstructionsIncluded),
+  withheld: z.array(AgentInstructionsWithheld),
+});
+export type AgentInstructionsResponse = z.infer<typeof AgentInstructionsResponse>;
+// end #19 agent instructions export ------------------------------------------------------------------

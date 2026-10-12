@@ -132,3 +132,18 @@ Every other Better Auth endpoint (email sign-in, social sign-in, password reset,
 | GET | `/v1/tokens` | → `TokenView[]` | Owner only. `status`: active, expired, revoked. |
 | DELETE | `/v1/tokens/:id` | → 204 | Owner only. Immediate; revoking twice is a no-op. |
 <!-- end #14 auth and tokens -->
+<!-- #19 agent instructions export -->
+## Agent instructions export (#19)
+
+The current-decisions view as `AGENTS.md` and `CLAUDE.md`, with citations, for a coding agent in another repository. Format, determinism, citations and the withholding rule: [agent-instructions-export.md](agent-instructions-export.md).
+
+| Method | Path | Body → Response | Notes |
+| --- | --- | --- | --- |
+| POST | `/v1/exports/agent-instructions` | `AgentInstructionsRequest` (`{}`) → `AgentInstructionsResponse` | 201. Selection is fixed: confirmed `decision` and `requirement` records with an approval and no confirmed successor (the rule of `GET /v1/decisions/current`, with requirements added). Response: `{ format: "poii.agent-instructions", formatVersion: 1, exportRunId, generatedAt, workspace, contentSha256, files: [{ name: "AGENTS.md", bytes, sha256 }, { name: "CLAUDE.md", bytes, sha256 }], included: [{ recordId, kind, title, citations }], withheld: [{ recordId, kind, title, reason: "never_send_to_ai" }] }`. Both files and the response are stored through the storage port; an `export_run` row records the manifest and `content_sha256`. Audit action `export.agent_instructions`. Any other body field is `400 validation_failed`. Capability `read`, the same rule as context packs. |
+| GET | `/v1/exports/:id` | → `AgentInstructionsResponse` | The stored run document (existing route). |
+| GET | `/v1/exports/:id/files/:name` | → `text/markdown; charset=utf-8` | `name` is `AGENTS.md` or `CLAUDE.md`. `404 not_found` for other names, for runs that are not agent instructions and for other workspaces. Capability `read`. |
+
+- `contentSha256` is the SHA-256 of the canonical body (the file from the `<!-- poii:body -->` line on). It does not depend on the run, the time or the file name: exporting unchanged decisions twice gives the same value. `files[].sha256` covers the whole file, header included, and differs per run.
+- Never-send content: a record whose stored `aiAllowed` is false, or that cites any live source with `aiAllowed = false`, appears only as its title, kind and record id with "content withheld: never-send source"; no statement, excerpt or source title. This applies whoever exports, because the files are meant for an AI coding agent.
+- Storage: the `export_kind` database enum has only `context_pack` and `backup`, so these runs are stored with `kind = context_pack` and are identified by `manifest.format = "poii.agent-instructions"` (`GET /v1/exports` shows both). No schema change.
+<!-- end #19 agent instructions export -->

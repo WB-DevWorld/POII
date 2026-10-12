@@ -5,6 +5,7 @@ import { createContextPackAction } from '@/app/actions';
 import { ActionForm, SubmitButton } from '@/components/ActionForm';
 import { ProblemNotice } from '@/components/ProblemNotice';
 import { apiTry } from '@/lib/api';
+import { agentFileHref, exportKindLabel, isAgentInstructionsManifest, isAgentInstructionsRun } from '@/lib/agent-instructions'; // #19
 import { formatTime } from '@/lib/format';
 import { first, type SearchParams } from '@/lib/notices';
 
@@ -99,7 +100,25 @@ export default async function ExportPage({ searchParams }: { searchParams: Searc
           </details>
         </div>
       ) : null}
-      {run?.ok && !isPack(run.data) ? <p className="notice">That export is a backup. Download it from the list below.</p> : null}
+      {run?.ok && isAgentInstructionsRun(run.data) ? ( // #19
+        <p className="notice">
+          That export is an agent instructions export. <a href={`/export/agent-instructions?run=${run.data.exportRunId}`}>Show it</a>.
+        </p>
+      ) : run?.ok && !isPack(run.data) ? <p className="notice">That export is a backup. Download it from the list below.</p> : null}
+
+      {/* #19 agent instructions export */}
+      <div className="card" data-testid="agent-instructions-link">
+        <h2>Agent instructions</h2>
+        <p>
+          The current decisions as <span className="mono">AGENTS.md</span> and <span className="mono">CLAUDE.md</span>, with citations, for a
+          coding agent in another repository.
+        </p>
+        <p className="row">
+          <a className="button" href="/export/agent-instructions">
+            Export agent instructions
+          </a>
+        </p>
+      </div>
 
       <h2>New pack</h2>
       <ActionForm action={createContextPackAction} className="card stack" aria-label="Context pack" testId="export-form">
@@ -171,18 +190,25 @@ export default async function ExportPage({ searchParams }: { searchParams: Searc
             </thead>
             <tbody>
               {runs.data.map(r => {
+                const agent = isAgentInstructionsManifest(r.manifest); // #19
                 const included = count(r.manifest, 'included');
                 const excluded = count(r.manifest, 'excluded');
                 const unavailable = count(r.manifest, 'unavailable');
                 return (
                   <tr key={r.id}>
                     <td className="nowrap">{formatTime(r.createdAt)}</td>
-                    <td>{r.kind === 'context_pack' ? 'context pack' : 'backup'} v{r.formatVersion}</td>
+                    <td>{exportKindLabel(r)}</td>
                     <td>
-                      {included !== null ? `${included} included · ${excluded ?? 0} excluded · ${unavailable ?? 0} unavailable` : '—'}
+                      {agent ? `${included ?? 0} included · ${count(r.manifest, 'withheld') ?? 0} withheld` : included !== null ? `${included} included · ${excluded ?? 0} excluded · ${unavailable ?? 0} unavailable` : '—'}
                     </td>
                     <td className="row">
-                      {r.kind === 'context_pack' ? (
+                      {agent ? (
+                        <>
+                          <a href={`/export/agent-instructions?run=${r.id}`}>Show</a>
+                          <a href={agentFileHref(r.id, 'AGENTS.md')} download="AGENTS.md">AGENTS.md</a>
+                          <a href={agentFileHref(r.id, 'CLAUDE.md')} download="CLAUDE.md">CLAUDE.md</a>
+                        </>
+                      ) : r.kind === 'context_pack' ? (
                         <>
                           <a href={`/export?run=${r.id}`}>Manifest</a>
                           <a href={`/export/${r.id}/markdown`} download>Markdown</a>
