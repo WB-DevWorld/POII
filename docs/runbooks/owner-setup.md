@@ -50,3 +50,5 @@ The agent sets: squash-only merges, delete branch on merge, auto-merge allowed, 
 ## 8. AccessLobby client registration (M3)
 
 The agent prepares the exact client request (callback, logout and backchannel URLs, PKCE, audience). You approve it in AccessLobby; the agent never changes AccessLobby.
+
+The request is `accesslobby-client-registration.md` in this folder (ADR-0012): client ids, exact redirect, post-logout and back-channel URLs on the web origin, PKCE S256, audience mapper, scope, expected claims, and paste-ready inputs for AccessLobby's own tooling. After it is applied, set `POII_ACCESSLOBBY_ISSUER`, `POII_ACCESSLOBBY_CLIENT_ID` and `POII_ACCESSLOBBY_API_URL` (see `.env.example`).
