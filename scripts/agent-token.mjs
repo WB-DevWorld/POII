@@ -94,7 +94,9 @@ async function mint() {
 
 /** Accepts only GitHub's installation-token syntax and an ISO-8601 expiry; anything else is an error, not cached. */
 function validatedEntry(slug, token, expiresAt) {
-  if (typeof token !== "string" || !/^ghs_[A-Za-z0-9]{20,255}$/.test(token)) throw new Error("installation token has an unexpected shape");
+  // GitHub installation tokens start with ghs_; the rest is base64url-like text (letters, digits, _ . -) and has
+  // grown from 36 to several hundred characters, so the length bound is generous.
+  if (typeof token !== "string" || !/^ghs_[A-Za-z0-9_.-]{20,2048}$/.test(token)) throw new Error("installation token has an unexpected shape");
   const expiry = Date.parse(String(expiresAt));
   if (!Number.isFinite(expiry)) throw new Error("installation token has no valid expiry");
   if (typeof slug !== "string" || !/^[a-z0-9-]{1,100}$/.test(slug)) throw new Error("App slug has an unexpected shape");
