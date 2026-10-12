@@ -93,8 +93,12 @@ jobs:
           docker network create poii-ci
           docker run -d --name poii-ci-db --network poii-ci \
             -e POSTGRES_USER=poii -e POSTGRES_PASSWORD=test-only-password -e POSTGRES_DB=poii public.ecr.aws/docker/library/postgres:17
-          for attempt in $(seq 1 30); do
-            docker exec poii-ci-db pg_isready -U poii -d poii && break; sleep 1; done
+          # pg_isready inside the container answers over the unix socket while the server is still starting its
+          # TCP listener, so the check runs from another container over the network and must also run a query.
+          for attempt in $(seq 1 60); do
+            if docker run --rm --network poii-ci -e PGPASSWORD=test-only-password public.ecr.aws/docker/library/postgres:17 sh -c 'pg_isready -h poii-ci-db -U poii -d poii >/dev/null && psql -h poii-ci-db -U poii -d poii -tAc "select 1" >/dev/null'; then break; fi
+            sleep 1
+          done
           docker run --rm --network poii-ci \
             -e DATABASE_URL=postgres://poii:test-only-password@poii-ci-db:5432/poii poii-api:ci node dist/migrate.js
           docker run -d --name poii-ci-api --network poii-ci \
