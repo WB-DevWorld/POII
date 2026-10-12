@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation';
 
 const navigation = [
   { href: '/sources', label: 'Sources' },
+  { href: '/imports', label: 'Import' }, // #20
   { href: '/records', label: 'Records' },
   { href: '/decisions', label: 'Current decisions' },
   { href: '/search', label: 'Search' },
