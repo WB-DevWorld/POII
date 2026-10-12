@@ -1,10 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { CurrentDecision } from '@poii/contracts';
+import type { CurrentDecision, WithheldCurrentDecision } from '@poii/contracts';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import type { RequestContext } from '../../common/request-context.js';
 import { DB } from '../../common/tokens.js';
 import { iso } from '../../common/util.js';
 import { requireCapability } from '../../authorization/authorization.js';
+import { neverSendRecordIds, withheldRecord } from '../../ai/disclosure.js';
 import type { Db } from '../../db/client.js';
 import { approval, record } from '../../db/schema/index.js';
 import type { Exec, RecordRow } from '../../db/types.js';
@@ -36,7 +37,8 @@ export async function currentRecordRows(exec: Exec, workspaceId: string, kind: R
 export class ViewsService {
   constructor(@Inject(DB) private readonly db: Db) {}
 
-  async currentDecisions(ctx: RequestContext): Promise<CurrentDecision[]> {
+  /** `ai` (#18, X-POII-AI-Context): decisions derived from never-send sources show their title and ids only. */
+  async currentDecisions(ctx: RequestContext, ai = false): Promise<Array<CurrentDecision | WithheldCurrentDecision>> {
     requireCapability(ctx.actor, 'read');
     const exec = this.db.orm;
     const rows = await currentRecordRows(exec, ctx.workspace.id, 'decision');
@@ -45,13 +47,18 @@ export class ViewsService {
     const summaries = await toSummaries(exec, rows);
     const evidence = await loadEvidence(exec, ids);
     const approvals = await loadApprovals(exec, ids);
+    const withheld = ai ? await neverSendRecordIds(exec, ids) : new Set<string>();
     const now = new Date();
-    const out: CurrentDecision[] = [];
+    const out: Array<CurrentDecision | WithheldCurrentDecision> = [];
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i]!;
       const recordApprovals = approvals.get(row.id) ?? [];
       const latest = recordApprovals[recordApprovals.length - 1];
       if (!latest) continue; // confirmed only through an approval; a row without one is not shown as current
+      if (withheld.has(row.id)) {
+        out.push({ record: withheldRecord(summaries[i]!), contentWithheld: true });
+        continue;
+      }
       const list = evidence.get(row.id) ?? [];
       out.push({
         record: summaries[i]!,

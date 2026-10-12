@@ -3,6 +3,8 @@ import type {
   ConfirmRecordRequest, CreateRecordRequest, EvidenceInput, ListRecordsQuery, RecordDetail, RecordSummary, RejectRecordRequest,
   SetStatusRequest, StatedRole, StatementMode, SupersedeRecordRequest, UpdateRecordRequest,
 } from '@poii/contracts';
+import type { WithheldRecord } from '@poii/contracts';
+import { neverSendRecordIds, recordsForAi, withheldRecord } from '../../ai/disclosure.js';
 import { and, asc, desc, eq, inArray, ne, or } from 'drizzle-orm';
 import type { z } from 'zod';
 import { audit } from '../../common/audit.js';
@@ -120,7 +122,8 @@ export class RecordsService {
     };
   }
 
-  async list(ctx: RequestContext, query: ListRecords): Promise<RecordSummary[]> {
+  /** `ai` (#18, X-POII-AI-Context): records derived from never-send sources show their title and ids only. */
+  async list(ctx: RequestContext, query: ListRecords, ai = false): Promise<Array<RecordSummary | WithheldRecord>> {
     requireCapability(ctx.actor, 'read');
     let idFilter;
     if (query.sourceId) {
@@ -136,12 +139,21 @@ export class RecordsService {
       query.lifecycleStatus ? eq(record.lifecycleStatus, query.lifecycleStatus) : undefined,
       idFilter,
     )).orderBy(desc(record.recordedAt), desc(record.id)).limit(query.limit).offset(query.offset);
-    return toSummaries(this.db.orm, rows);
+    const summaries = await toSummaries(this.db.orm, rows);
+    return ai ? recordsForAi(this.db.orm, summaries) : summaries;
   }
 
-  async get(ctx: RequestContext, id: string): Promise<RecordDetail> {
+  /**
+   * `ai` (#18, X-POII-AI-Context): a record derived from a never-send source shows its title and ids only; for any
+   * other record the version snapshots are left empty, because an earlier version can hold content of evidence
+   * that has since been removed.
+   */
+  async get(ctx: RequestContext, id: string, ai = false): Promise<RecordDetail | WithheldRecord> {
     requireCapability(ctx.actor, 'read');
-    return loadDetail(this.db.orm, ctx.workspace.id, id);
+    const detail = await loadDetail(this.db.orm, ctx.workspace.id, id);
+    if (!ai) return detail;
+    if ((await neverSendRecordIds(this.db.orm, [id])).has(id)) return withheldRecord(detail);
+    return { ...detail, versions: detail.versions.map(v => ({ ...v, snapshot: {} })) };
   }
 
   /** Edits append a version. A confirmed record's content and attribution are immutable: supersede instead. */

@@ -1,0 +1,18 @@
+# Compatibility matrix
+
+What was actually tested, per client or provider (#22, ADR-0007). A row exists only when the test ran; everything else is listed under "Not tested". Each row names how the evidence was captured. Update a row only with a new run.
+
+| Client or provider | Version | Transport | Read/write | Capture method | Last test date | Result |
+| --- | --- | --- | --- | --- | --- | --- |
+| MCP TypeScript SDK client (`Client` + `StdioClientTransport`) driving `@poii/mcp` | `@modelcontextprotocol/sdk` 1.32.1 (client and server), protocol 2025-11-25, Node 25.9.0, Windows 11 | MCP stdio → POII HTTP API (`X-POII-AI-Context: 1`, owner token scope `read`) | Read only (server has no write tools) | `apps/mcp/test/mcp.test.ts` (node:test): real API process from source on a fresh migrated PostgreSQL 17 database, token minted through the API | 2026-10-10 | Pass, 11/11. Handshake (name, version, instructions); exactly 6 tools, all `readOnlyHint`; every tool called; never-send source `ai_not_allowed`, derived record and decision title-and-ids only, never-send text absent from every result; person pack refused; audit log unchanged by tool calls; wrong token `invalid_token` and revoked token `token_revoked` as tool errors; refuses to start without a usable configuration. |
+| Claude Code | 2.1.292 (Windows 11; session model reported by the CLI: `claude-fable-5-1`) | MCP stdio (`node apps/mcp/dist/index.js`) → POII HTTP API on a throwaway local database | Read only | `claude mcp add --scope project` and `claude mcp list` in a scratch directory; one-shot `claude -p --mcp-config .mcp.json --strict-mcp-config --allowedTools mcp__poii__poii_current_decisions --output-format stream-json --verbose`, transcript parsed | 2026-10-10 | Pass for what was run. `mcp add` wrote the expected `.mcp.json`; `mcp list` showed the server as "Pending approval" (project scope needs interactive approval, not exercised). In the one-shot run the server connected, all 6 tools were listed, Claude called `poii_current_decisions` and answered "Negotiation handling WITHHELD / Weekly release train on Tuesdays FULL"; the tool result carried `contentWithheld` and not the never-send marker text. |
+| POII HTTP API, direct HTTP client (Node `fetch`) with `X-POII-AI-Context: 1` | API at this branch, Node 25.9.0 | HTTP on loopback, owner tokens `read` and `propose` | Read routes; write and confirm attempts refused | `apps/api/test/read-api.test.ts` (node:test) against a fresh database | 2026-10-10 | Pass, 11/11. Every read route: allowed material served, never-send sources 409 or left out with `X-POII-Withheld`, derived records withheld; span route; search excludes never-send without a count; only destination-ai packs; a `propose` token in AI context writes nothing through any read route and cannot confirm, reject, delete or change `aiAllowed`. |
+
+## Not tested
+
+- **Claude Desktop**: configuration snippet in `apps/mcp/README.md`; not run.
+- **Cursor**: Cursor 3.24.9 is installed on the test machine but has no agent CLI there; it can only be driven through its interface, which was not done. Snippet in `apps/mcp/README.md`, not run.
+- **ChatGPT**: not verified. As far as is known here, it connects only to remote MCP servers over HTTPS; `@poii/mcp` is stdio only.
+- **Claude Code `local` and `user` scopes, and interactive approval of a project-scoped server**: not run, so the owner's Claude Code configuration was not changed.
+- **Node 24**: the engines minimum and the CI version (24.19.0); these local runs used Node 25.9.0. CI uses 24.19.0; this branch has not run in CI yet.
+- **AI-execution providers (Anthropic, OpenAI)** through POII's AI port: outside #18; no rows yet.
