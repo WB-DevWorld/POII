@@ -50,6 +50,12 @@ export interface AiProviderSettings {
   apiKey: string | null;
   model: string;
   monthlyCapUsd: number;
+  /**
+   * Anthropic only. A key that is not scoped to one workspace (a personal or service-account key created for the
+   * whole organization) must name the workspace on every request (`anthropic-workspace-id` header); without it
+   * Anthropic answers 400. Unused for a workspace-scoped key. Always null for OpenAI.
+   */
+  workspaceId: string | null;
 }
 
 export interface AiSettings {
@@ -88,11 +94,13 @@ export function aiConfig(env: NodeJS.ProcessEnv = process.env): AiSettings {
       apiKey: key('ANTHROPIC_API_KEY'),
       model: env.POII_AI_ANTHROPIC_MODEL?.trim() || AI_DEFAULT_MODELS.anthropic,
       monthlyCapUsd: numberEnv(env, 'POII_AI_MONTHLY_CAP_USD_ANTHROPIC', 20, 0, 100_000, false),
+      workspaceId: key('ANTHROPIC_WORKSPACE_ID'),
     },
     openai: {
       apiKey: key('OPENAI_API_KEY'),
       model: env.POII_AI_OPENAI_MODEL?.trim() || AI_DEFAULT_MODELS.openai,
       monthlyCapUsd: numberEnv(env, 'POII_AI_MONTHLY_CAP_USD_OPENAI', 20, 0, 100_000, false),
+      workspaceId: null,
     },
     logRequestText: env.POII_AI_LOG_REQUEST_TEXT === 'true',
     previewTtlSeconds: numberEnv(env, 'POII_AI_PREVIEW_TTL_SECONDS', 900, 10, 86_400),

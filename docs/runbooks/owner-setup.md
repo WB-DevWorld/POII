@@ -23,6 +23,7 @@ Done on 10 Oct 2026. The GitHub App `wbdevworld-poii-agent` (App ID 5258365) is 
 1. Claim the Max plan's monthly API credits in the Console billing page.
 2. Create a key named `poii-staging`, set a monthly spend limit of USD 20, scope it to a `POII` workspace if workspaces are available.
 3. Put it in local `.env` as `ANTHROPIC_API_KEY` and in the Dokploy staging environment as the same name.
+4. If the key was created without a workspace scope (Anthropic then rejects every request with "This API key is not scoped to a workspace"), either create a workspace-scoped key instead, or copy the workspace's id (`wrkspc_…`, Console → Workspaces) into `ANTHROPIC_WORKSPACE_ID` next to the key. The Default Workspace has an id too.
 
 ## 4. OpenAI
 

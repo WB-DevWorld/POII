@@ -85,7 +85,7 @@ Mutating requests may send `Idempotency-Key: <opaque>`; a retry with the same ke
 <!-- #13 AI -->
 ## AI-assisted extraction (M2, optional)
 
-ADR-0007. Off unless `POII_AI_ENABLED=true` **and** a provider key is set (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) **and** the model is in the price table (`apps/api/src/ai/pricing.ts`). While off, every endpoint below answers `503 ai_disabled` and the manual path is unaffected; `MeResponse.aiEnabled` says whether AI is usable.
+ADR-0007. Off unless `POII_AI_ENABLED=true` **and** a provider key is set (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) **and** the model is in the price table (`apps/api/src/ai/pricing.ts`). While off, every endpoint below answers `503 ai_disabled` and the manual path is unaffected; `MeResponse.aiEnabled` says whether AI is usable. An Anthropic key that is not scoped to one workspace (a personal or service-account key for the whole organization) needs `ANTHROPIC_WORKSPACE_ID` (`wrkspc_…`), sent as the `anthropic-workspace-id` header on every request; without it Anthropic answers `400 invalid_request_error` and the call ends as `provider_error` with nothing billed. A workspace-scoped key needs no setting.
 
 | Method | Path | Body → Response | Notes |
 | --- | --- | --- | --- |
