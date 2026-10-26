@@ -6,3 +6,6 @@ allowBuilds:
   sharp: true
 minimumReleaseAgeExclude:
   - '@types/node@24.19.2'
+# GHSA-q7qp-rjg7-q26m: @nestjs/platform-express 12.x pins multer 2.4.0 exactly; drop once it ships multer >=2.5.0.
+overrides:
+  multer: 2.5.0
