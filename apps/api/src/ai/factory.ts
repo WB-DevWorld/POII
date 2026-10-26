@@ -44,7 +44,7 @@ export function createAiExecution(settings: Settings, db: Db, fetchImpl: FetchLi
       price: priceOf(status.provider, s.model)!,
       capMicro: Math.round(s.monthlyCapUsd * 1_000_000),
       create: status.provider === 'anthropic'
-        ? () => new AnthropicAiExecution({ apiKey, model: s.model, fetch: fetchImpl })
+        ? () => new AnthropicAiExecution({ apiKey, model: s.model, fetch: fetchImpl, ...(s.workspaceId ? { workspaceId: s.workspaceId } : {}) })
         : () => new OpenAiAiExecution({ apiKey, model: s.model, fetch: fetchImpl }),
     });
   }

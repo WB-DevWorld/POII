@@ -1,6 +1,7 @@
 // Anthropic provider client for the AI-execution port (ADR-0007). Plain fetch, injected; no SDK.
 // Request and response shapes: Messages API, POST https://api.anthropic.com/v1/messages with headers
-// x-api-key and anthropic-version: 2023-06-01; JSON answer constrained by output_config.format
+// x-api-key and anthropic-version: 2023-06-01 (plus anthropic-workspace-id when the key is not scoped to one
+// workspace: Anthropic then requires the workspace on every request); JSON answer constrained by output_config.format
 // (type json_schema). Response: { model, content: [{ type: "thinking" | "text", ... }], stop_reason,
 // usage: { input_tokens, output_tokens, cache_creation_input_tokens?, cache_read_input_tokens? } };
 // errors: { type: "error", error: { type, message } }. Confirmed against the Claude API docs on 2026-10-10.
@@ -34,7 +35,7 @@ export class AnthropicAiExecution implements AiProviderClient {
   readonly provider = 'anthropic' as const;
 
   constructor(
-    private readonly options: { apiKey: string; model: string; fetch: FetchLike; url?: string },
+    private readonly options: { apiKey: string; model: string; fetch: FetchLike; url?: string; workspaceId?: string },
   ) {}
 
   get model(): string {
@@ -60,6 +61,7 @@ export class AnthropicAiExecution implements AiProviderClient {
           'content-type': 'application/json',
           'x-api-key': this.options.apiKey,
           'anthropic-version': ANTHROPIC_VERSION,
+          ...(this.options.workspaceId ? { 'anthropic-workspace-id': this.options.workspaceId } : {}),
         },
         body: JSON.stringify(this.requestBody(promptText, options.maxOutputTokens)),
         signal: AbortSignal.timeout(options.timeoutMs),

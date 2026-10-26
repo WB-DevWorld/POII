@@ -100,6 +100,7 @@ test('config: AI defaults, caps and validation', () => {
   const s = aiConfig({});
   assert.equal(s.defaultProvider, null);
   assert.equal(s.anthropic.apiKey, null);
+  assert.equal(s.anthropic.workspaceId, null);
   assert.equal(s.anthropic.monthlyCapUsd, 20);
   assert.equal(s.openai.monthlyCapUsd, 20);
   assert.equal(s.logRequestText, false);
@@ -108,9 +109,11 @@ test('config: AI defaults, caps and validation', () => {
   assert.equal(s.timeoutMs, 600_000, 'a long generation is not aborted client-side while the provider bills');
   const custom = aiConfig({
     POII_AI_PROVIDER_DEFAULT: 'openai', OPENAI_API_KEY: ' k ', POII_AI_OPENAI_MODEL: 'gpt-6-luna', POII_AI_MONTHLY_CAP_USD_OPENAI: '5.5',
-    POII_AI_LOG_REQUEST_TEXT: 'true', POII_AI_PREVIEW_TTL_SECONDS: '60',
+    POII_AI_LOG_REQUEST_TEXT: 'true', POII_AI_PREVIEW_TTL_SECONDS: '60', ANTHROPIC_WORKSPACE_ID: ' wrkspc_test ',
   });
   assert.equal(custom.defaultProvider, 'openai');
+  assert.equal(custom.anthropic.workspaceId, 'wrkspc_test');
+  assert.equal(custom.openai.workspaceId, null);
   assert.equal(custom.openai.apiKey, 'k');
   assert.equal(custom.openai.model, 'gpt-6-luna');
   assert.equal(custom.openai.monthlyCapUsd, 5.5);
@@ -168,6 +171,7 @@ test('Anthropic client (MOCKED responses): request shape, the prompt is the only
   assert.equal(call.url, ANTHROPIC_MESSAGES_URL);
   assert.equal(call.headers['x-api-key'], FAKE_KEY);
   assert.equal(call.headers['anthropic-version'], ANTHROPIC_VERSION);
+  assert.equal(call.headers['anthropic-workspace-id'], undefined, 'no workspace header unless configured');
   assert.equal(call.body.model, 'claude-opus-5-5');
   assert.equal(call.body.max_tokens, 4000);
   assert.deepEqual(call.body.messages, [{ role: 'user', content: prompt }]);
@@ -177,6 +181,20 @@ test('Anthropic client (MOCKED responses): request shape, the prompt is the only
   assert.deepEqual(result.usage, { inputTokens: 1834, outputTokens: 412 });
   assert.equal(result.candidates.length, 4, 'raw candidates; anchoring happens later');
   assert.equal(result.errors.length, 0);
+});
+
+test('Anthropic client (MOCKED responses): a key that is not scoped to a workspace sends anthropic-workspace-id', async () => {
+  const stub = stubFetch();
+  stub.enqueue(recorded('anthropic.messages.ok.json'));
+  const client = new AnthropicAiExecution({ apiKey: FAKE_KEY, model: 'claude-opus-5-5', fetch: stub.fetch, workspaceId: 'wrkspc_test' });
+  await client.extract(buildPrompt(fixtureText, []), opts);
+  const call = stub.calls[0]!;
+  assert.equal(call.headers['anthropic-workspace-id'], 'wrkspc_test');
+  assert.equal(call.headers['x-api-key'], FAKE_KEY);
+  assert.deepEqual(Object.keys(call.headers).sort(), ['anthropic-version', 'anthropic-workspace-id', 'content-type', 'x-api-key'], 'nothing else is added');
+  const withFactory = createAiExecution(config({ DATABASE_URL: 'postgres://unused/x', POII_AI_ENABLED: 'true', ANTHROPIC_API_KEY: FAKE_KEY, ANTHROPIC_WORKSPACE_ID: 'wrkspc_test' }), noDb);
+  assert.ok(withFactory instanceof GatedAiExecution);
+  assert.ok(!JSON.stringify(withFactory.status()).includes('wrkspc_test'), 'status does not expose the workspace id');
 });
 
 test('Anthropic client (MOCKED responses): malformed text, error envelope, network failure, garbage body', async () => {
