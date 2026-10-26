@@ -14,9 +14,9 @@ Observed deployments only, by digest, with the time of observation. CI success i
 
 | Item | Value | Observed on 2026-10-26 |
 | --- | --- | --- |
-| Staging URL | `https://poii-staging.cetechbpa.com` | DNS answers A `49.13.152.39` plus two Cloudflare IPv6 addresses; an HTTPS connection attempt got no answer (nothing listens yet). |
+| Staging URL | `https://poii-staging.cetechbpa.com` | DNS-only A record `49.13.152.39`, no AAAA (checked through 1.1.1.1 and 8.8.8.8). The host answers HTTP with 404 and HTTPS with an untrusted default certificate: Traefik is up, no POII domain is configured on it yet. |
 | Staging host | Hetzner, Nuremberg, `49.13.152.39` (reverse name `static.39.152.13.49.clients.your-server.de`); Dokploy will run `compose.dokploy.yaml` there | Dokploy project, Compose service and domains not yet created by the owner (`docs/runbooks/owner-setup.md` §5). |
-| Production URL | `https://poii.cetechbpa.com`, reserved; unused until the first production activation (`POII PRODUCTION ACTIVATION APPROVED`) | DNS answers Cloudflare-proxied addresses (`172.67.183.5`, `104.21.48.84`); HTTPS answered 404 from the proxy, no origin behind it. |
+| Production URL | `https://poii.cetechbpa.com`, reserved; unused until the first production activation (`POII PRODUCTION ACTIVATION APPROVED`) | DNS-only A record `49.13.152.39`, no AAAA, same host as staging; same HTTP 404 and untrusted default certificate. Resolvers that cached the records from before the owner's switch to DNS-only may still show Cloudflare addresses for a while. |
 | API from outside | only `/health/live`, `/health/ready` and `/health/version` on the staging host (ADR-0010 routes the `/health` prefix to the API); the rest of the API stays internal | not reachable yet |
 
 ### Release candidate for the first staging deploy
