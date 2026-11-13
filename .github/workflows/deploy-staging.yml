@@ -115,7 +115,7 @@ jobs:
       SOURCE_SHA: ${{ needs.gate.outputs.source_sha }}
       DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -138,7 +138,7 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: poii-release-${{ needs.gate.outputs.source_sha }}
           run-id: ${{ needs.gate.outputs.publish_run_id }}
@@ -173,7 +173,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           { echo "### Images"; echo; echo "- API: \`$api\`"; echo "- Web: \`$web\`"; echo; } >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '24.19.0'
 
@@ -240,7 +240,7 @@ jobs:
             echo "Record it through a normal PR: add this file under \`infra/releases/\` (gated path) and the observation in \`LIVE-ENVIRONMENT-FACTS.md\`. This workflow never pushes to main."
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: env.DRY_RUN != 'true'
         with:
           name: poii-staging-manifest-${{ needs.gate.outputs.source_sha }}-${{ github.run_attempt }}
