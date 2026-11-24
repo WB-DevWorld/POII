@@ -2,7 +2,11 @@
 # Staging checks for the deploy workflow (docs/runbooks/staging-deploy.md).
 #
 #   staging-smoke.sh wait    poll the API's /health/ready until it reports the expected SHA (hard timeout)
-#   staging-smoke.sh check   health live and ready, version, web root 200, unknown route 404, core-journey hook
+#   staging-smoke.sh check   health live and ready, version, web root, unknown route, core-journey hook
+#                             Web root: 200, or a redirect to this host's /signin whose page answers 200.
+#                             Unknown route: 404, or a redirect to this host's /signin. An instance that
+#                             requires sign-in redirects every signed-out request there, so it reveals
+#                             no route.
 #
 # Environment:
 #   POII_WEB_BASE_URL            required, e.g. https://poii-staging.example.org
@@ -33,10 +37,20 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 failures=0
 
-# fetch URL -> sets $code and writes the body to $work/body
+# fetch URL -> sets $code and $redirect (absolute target of a redirect, else empty) and writes the body
+# to $work/body. Redirects are reported, never followed.
 fetch() {
+  local out
   : > "$work/body"
-  code="$(curl -sS -o "$work/body" -w '%{http_code}' --max-time 15 -H 'accept: application/json' "$1" 2>/dev/null)" || code="000"
+  out="$(curl -sS -o "$work/body" -w '%{http_code} %{redirect_url}' --max-time 15 -H 'accept: application/json' "$1" 2>/dev/null)" || out="000 "
+  code="${out%% *}"
+  redirect="${out#* }"
+}
+
+# True when the last fetch was a redirect to the sign-in page of the web host itself.
+redirected_to_signin() {
+  case "$code" in 302|303|307|308) ;; *) return 1 ;; esac
+  [ "$redirect" = "$web_base/signin" ] || [[ "$redirect" == "$web_base/signin?"* ]]
 }
 
 # json_field NAME -> prints the top-level string field NAME of $work/body, empty if absent or not JSON
@@ -63,9 +77,24 @@ check_health() { # path wanted_status
   fi
 }
 
-check_web() { # path wanted_code label
-  fetch "$web_base$1"
-  if [ "$code" = "$2" ]; then pass "GET $3 -> $code"; else fail "GET $3 -> HTTP $code (want $2)"; fi
+check_web_root() {
+  fetch "$web_base/"
+  if [ "$code" = 200 ]; then pass "GET web root -> 200"; return; fi
+  if redirected_to_signin; then
+    local first="$code"
+    fetch "$web_base/signin"
+    if [ "$code" = 200 ]; then pass "GET web root -> $first to /signin, sign-in page -> 200"
+    else fail "GET web root -> $first to /signin, but the sign-in page -> HTTP $code (want 200)"; fi
+    return
+  fi
+  fail "GET web root -> HTTP $code (want 200, or a redirect to /signin on this host)"
+}
+
+check_unknown_route() {
+  fetch "$web_base/poii-smoke-unknown-route-$(date +%s)"
+  if [ "$code" = 404 ]; then pass "GET unknown route -> 404"
+  elif redirected_to_signin; then pass "GET unknown route -> $code to /signin (sign-in is required before any route answers)"
+  else fail "GET unknown route -> HTTP $code (want 404, or a redirect to /signin on this host)"; fi
 }
 
 run_core_journey_smoke() {
@@ -107,8 +136,8 @@ case "$mode" in
     echo "Staging smoke against web $web_base, API health $api_base, expecting $expected"
     check_health /health/live ok
     check_health /health/ready ready
-    check_web / 200 "web root"
-    check_web "/poii-smoke-unknown-route-$(date +%s)" 404 "unknown route"
+    check_web_root
+    check_unknown_route
     run_core_journey_smoke
     if [ "$failures" -gt 0 ]; then die "$failures staging smoke check(s) failed"; fi
     echo "All staging smoke checks passed"
