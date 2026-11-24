@@ -14,8 +14,12 @@ const SCRIPT = fileURLToPath(new URL('./staging-smoke.sh', import.meta.url));
 const SHA = 'b'.repeat(40);
 const OLD_SHA = 'c'.repeat(40);
 
-/** Mock staging host. `version` is the SHA the API reports; `rootStatus` the web root's status code. */
-async function startStaging({ version = SHA, rootStatus = 200 } = {}) {
+/**
+ * Mock staging host. `version` is the SHA the API reports; `rootStatus` the web root's status code.
+ * `signIn` makes it behave like an instance that requires sign-in: every signed-out page request is
+ * redirected (307) to `signInTarget`, and `/signin` answers `signInStatus`.
+ */
+async function startStaging({ version = SHA, rootStatus = 200, signIn = false, signInStatus = 200, signInTarget = '/signin' } = {}) {
   const state = { version, rootStatus };
   const server = http.createServer((req, res) => {
     const json = (code, body) => {
@@ -24,6 +28,15 @@ async function startStaging({ version = SHA, rootStatus = 200 } = {}) {
     };
     if (req.url === '/health/live') return json(200, { status: 'ok', version: state.version });
     if (req.url === '/health/ready') return json(200, { status: 'ready', version: state.version, aiEnabled: false });
+    if (signIn) {
+      if (req.url === '/signin') {
+        res.writeHead(signInStatus, { 'content-type': 'text/html' });
+        return res.end('<!doctype html><title>Sign in</title>');
+      }
+      const next = req.url === '/' ? '' : `?next=${encodeURIComponent(req.url)}`;
+      res.writeHead(307, { location: `${signInTarget}${next}` });
+      return res.end();
+    }
     if (req.url === '/') {
       res.writeHead(state.rootStatus, { 'content-type': 'text/html' });
       return res.end('<!doctype html><title>POII</title>');
@@ -86,6 +99,44 @@ describe('staging-smoke.sh check', () => {
       assert.match(result.stderr, /3 staging smoke check\(s\) failed/);
     } finally {
       await staging.close();
+    }
+  });
+
+  test('passes on an instance that requires sign-in: root and unknown routes redirect to /signin, which answers 200', async () => {
+    const staging = await startStaging({ signIn: true });
+    try {
+      const result = await runSmoke('check', { POII_WEB_BASE_URL: `${staging.url}/` });
+      assert.equal(result.code, 0, result.stdout + result.stderr);
+      assert.match(result.stdout, /PASS {2}GET web root -> 307 to \/signin, sign-in page -> 200/);
+      assert.match(result.stdout, /PASS {2}GET unknown route -> 307 to \/signin/);
+    } finally {
+      await staging.close();
+    }
+  });
+
+  test('fails when the sign-in page behind the redirect is broken', async () => {
+    const staging = await startStaging({ signIn: true, signInStatus: 500 });
+    try {
+      const result = await runSmoke('check', { POII_WEB_BASE_URL: staging.url });
+      assert.equal(result.code, 1);
+      assert.match(result.stdout, /FAIL {2}GET web root -> 307 to \/signin, but the sign-in page -> HTTP 500/);
+      assert.match(result.stderr, /1 staging smoke check\(s\) failed/);
+    } finally {
+      await staging.close();
+    }
+  });
+
+  test('fails when the redirect leaves the host or goes somewhere other than /signin', async () => {
+    for (const signInTarget of ['https://example.invalid/signin', '/somewhere-else', '/signin-other']) {
+      const staging = await startStaging({ signIn: true, signInTarget });
+      try {
+        const result = await runSmoke('check', { POII_WEB_BASE_URL: staging.url });
+        assert.equal(result.code, 1, signInTarget);
+        assert.match(result.stdout, /FAIL {2}GET web root -> HTTP 307 \(want 200, or a redirect to \/signin on this host\)/);
+        assert.match(result.stdout, /FAIL {2}GET unknown route -> HTTP 307/);
+      } finally {
+        await staging.close();
+      }
     }
   });
 
