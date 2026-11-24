@@ -1,0 +1,99 @@
+name: Main CI catch-up
+# Routine PRs are merged by GitHub auto-merge, which `classify` enables with the workflow token. GitHub
+# starts no workflow for a push made with that token, so such a merge left `main` without CI and without
+# published images (#53 `7dff763`, #72 `efe2e04`). This workflow starts CI on `main` when its head commit
+# has no CI run; "Publish immutable images" then follows that run as it follows a push run.
+# It reads pull request and run metadata only. It never checks out or runs code from a pull request.
+on:
+  # A pull request's CI finishing is the moment an auto-merge can land.
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  # Backstop for merges the trigger above missed (another check finished last, an API hiccup).
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+  pull-requests: read
+  # To start the CI workflow on main (workflow_dispatch is the one event the workflow token may raise).
+  actions: write
+concurrency:
+  group: main-ci-catchup
+  cancel-in-progress: false
+defaults:
+  run:
+    shell: bash  # bash -eo pipefail
+jobs:
+  catch-up:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.event == 'pull_request' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Start CI on main when its head commit has none
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+        run: |
+          set -euo pipefail
+          note() { echo "$1" | tee -a "$GITHUB_STEP_SUMMARY"; }
+          echo "## Main CI catch-up" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$EVENT" = workflow_run ]; then
+            [[ "${PR_NUMBER:-}" =~ ^[0-9]+$ ]] || { note "The finished CI run names no pull request of this repository. The scheduled run covers it."; exit 0; }
+            # Auto-merge lands seconds after the last required check. Wait for it, at most three minutes.
+            state=waiting
+            for _ in $(seq 1 12); do
+              state="$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '
+                if .merged then (if .merged_by.login == "github-actions[bot]" then "auto-merged" else "merged-by-someone" end)
+                elif .state != "open" then "closed"
+                elif .auto_merge != null then "waiting"
+                else "no-auto-merge" end')"
+              [ "$state" = waiting ] || break
+              sleep 15
+            done
+            case "$state" in
+              auto-merged) note "PR #$PR_NUMBER was merged by auto-merge." ;;
+              merged-by-someone) note "PR #$PR_NUMBER was merged by a person or an app; that push starts CI itself."; exit 0 ;;
+              waiting) note "PR #$PR_NUMBER has auto-merge on but has not merged yet. The scheduled run covers it."; exit 0 ;;
+              *) note "PR #$PR_NUMBER is not auto-merging ($state). Nothing to do."; exit 0 ;;
+            esac
+          fi
+
+          # Prints how many CI runs exist for a main commit. A failed or odd answer stops the job: it must
+          # never be read as "no run", which would start CI needlessly.
+          ci_runs() {
+            local count
+            count="$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?branch=main&head_sha=$1&per_page=1" --jq .total_count)"
+            [[ "$count" =~ ^[0-9]+$ ]] || { note "Could not count the CI runs of \`$1\`."; exit 1; }
+            echo "$count"
+          }
+
+          head="$(gh api "repos/$REPO/commits/main")"
+          sha="$(jq -r .sha <<<"$head")"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { note "Could not read the head of main."; exit 1; }
+          runs="$(ci_runs "$sha")"
+          if [ "$runs" -gt 0 ]; then note "main \`$sha\` already has a CI run. Nothing to do."; exit 0; fi
+          # A push by a person starts CI within seconds; do not race it.
+          age=$(( $(date +%s) - $(date -d "$(jq -r .commit.committer.date <<<"$head")" +%s) ))
+          if [ "$age" -lt 60 ]; then
+            sleep $(( 60 - age ))
+            runs="$(ci_runs "$sha")"
+            if [ "$runs" -gt 0 ]; then note "main \`$sha\` already has a CI run. Nothing to do."; exit 0; fi
+          fi
+
+          gh workflow run ci.yml --repo "$REPO" --ref main
+          note "main \`$sha\` had no CI run (merged with the workflow token). Started CI on main."
+          # Let the new run appear before the next queued catch-up looks, so it does not start a second one.
+          for _ in $(seq 1 12); do
+            runs="$(ci_runs "$sha")"
+            if [ "$runs" -gt 0 ]; then exit 0; fi
+            sleep 5
+          done
+          note "The started run is not listed yet after a minute; check the Actions tab."
