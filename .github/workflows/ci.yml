@@ -3,6 +3,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Started by main-ci-catchup.yml for a main commit that an auto-merge left without a run.
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
