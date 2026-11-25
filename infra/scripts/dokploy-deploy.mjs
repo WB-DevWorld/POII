@@ -11,6 +11,9 @@
 //   DEPLOY_TITLE             optional; unique title used to find this deployment in Dokploy's list
 //   DEPLOY_TIMEOUT_SECONDS   optional; default 1200
 //   DOKPLOY_DRY_RUN          optional; "true" reads and validates, changes nothing
+//   EXPECT_WEB_BASE_URL      optional; the WEB_BASE_URL the Compose service must already have. A compose id
+//                            that names another environment's service then stops the run before any change.
+//                            Set by deploy-production.yml; not set on staging.
 //
 // Behaviour: every Dokploy response is checked against the shape this script relies on; anything
 // unexpected stops the deploy with an error instead of guessing. The script never cancels a
@@ -116,8 +119,14 @@ function readConfig(env) {
   if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) fail('DEPLOY_TIMEOUT_SECONDS must be a positive number');
   const pollIntervalMs = Number(env.DEPLOY_POLL_INTERVAL_MS ?? 10_000);
   if (!Number.isFinite(pollIntervalMs) || pollIntervalMs <= 0) fail('DEPLOY_POLL_INTERVAL_MS must be a positive number');
+  let expectWebBaseUrl = null;
+  if (env.EXPECT_WEB_BASE_URL) {
+    if (!/^https:\/\/[^/\s]+\/?$/.test(env.EXPECT_WEB_BASE_URL)) fail('EXPECT_WEB_BASE_URL must be an https origin without a path');
+    expectWebBaseUrl = env.EXPECT_WEB_BASE_URL.replace(/\/+$/, '');
+  }
   return {
     apiBase,
+    expectWebBaseUrl,
     token: env.DOKPLOY_TOKEN,
     composeId: env.DOKPLOY_COMPOSE_ID,
     target: Object.fromEntries(MANAGED_KEYS.map(key => [key, env[key]])),
@@ -260,6 +269,13 @@ export async function main(env = process.env) {
     if (parsed && !MANAGED_KEYS.includes(parsed.key)) {
       maskEnvValue(parsed.key, parsed.value);
       rememberEnvValue(parsed.value);
+    }
+  }
+  if (cfg.expectWebBaseUrl) {
+    // The service's own value is never printed: it is one of the masked values.
+    const found = currentEnv.split(/\r?\n/).map(parseEnvLine).filter(parsed => parsed?.key === 'WEB_BASE_URL');
+    if (found.length !== 1 || found[0].value.replace(/\/+$/, '') !== cfg.expectWebBaseUrl) {
+      fail('The Compose service does not have the WEB_BASE_URL expected for this environment; DOKPLOY_COMPOSE_ID may name the service of another environment. Nothing was changed');
     }
   }
   if (compose.isolatedDeployment === true) log('::warning::Isolated Deployment is on for this Compose service; compose.dokploy.yaml expects it off');
