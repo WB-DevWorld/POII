@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { ApiError, toProblem } from '../src/lib/api';
 import {
-  API_SESSION_COOKIE, API_SESSION_COOKIE_SECURE, CSRF_HEADER, isSecureBaseUrl, parseSessionSetCookie, safeNextPath, sessionCookieOptions,
+  API_SESSION_COOKIE, API_SESSION_COOKIE_SECURE, apiSessionValue, CSRF_HEADER, isSecureBaseUrl, parseSessionSetCookie, safeNextPath, sessionCookieOptions,
   sessionHeaders, webOrigin,
 } from '../src/lib/session';
 
@@ -66,6 +66,24 @@ test('API calls carry the CSRF header and the web Origin always, and the session
   });
   assert.deepEqual(sessionHeaders('evil; other=1', web), { 'x-poii-csrf': '1', origin: 'https://poii.example.test' });
   assert.deepEqual(sessionHeaders(undefined, ''), { 'x-poii-csrf': '1' }, 'no WEB_BASE_URL: no Origin');
+});
+
+test('the session token reaches the API in one form, whether the web cookie arrives URL-encoded or already decoded', () => {
+  const web = 'https://poii.example.test';
+  // What Next hands over when it renders the target of the sign-in action's redirect itself: decoded once more.
+  const decoded = decodeURIComponent(secret);
+  assert.notEqual(decoded, secret);
+  assert.match(decoded, /[+=]/);
+  assert.equal(apiSessionValue(secret), secret);
+  assert.equal(apiSessionValue(decoded), secret);
+  assert.deepEqual(sessionHeaders(decoded, web), sessionHeaders(secret, web));
+  assert.equal(sessionHeaders(decoded, web).cookie, `poii.session_token=${secret}; __Secure-poii.session_token=${secret}`);
+  // Nothing that is not a token gets through in either form.
+  for (const bad of ['', 'a b', 'evil; other=1', 'evil%3B%20other%3D1', 'abc%0D%0ASet-Cookie%3A%20x%3Dy', 'bad%E0%A4%A', 'x'.repeat(513), 'a%252Bb']) {
+    assert.equal(apiSessionValue(bad), null, bad.slice(0, 30));
+    assert.equal(sessionHeaders(bad, web).cookie, undefined, bad.slice(0, 30));
+  }
+  assert.equal(apiSessionValue(undefined), null);
 });
 
 test('after sign-in only same-site paths are followed', () => {

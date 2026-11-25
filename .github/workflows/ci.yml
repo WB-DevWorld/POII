@@ -75,6 +75,26 @@ jobs:
           path: apps/web/playwright-report/
           if-no-files-found: ignore
           retention-days: 7
+      # The same build under local-signin, the adapter staging runs. A fresh database: the owner password is
+      # applied only while no sign-in user exists, so the run must not depend on what earlier steps left behind.
+      # Own ports, so it does not wait for the smoke's servers to let go of theirs. The password and the session
+      # secret are made here, live only in this step's environment and are masked in the log; this run writes
+      # no trace and no HTML report (playwright.config.ts), so they reach no artifact either.
+      - name: Sign-in journey under local-signin (Playwright)
+        env:
+          POII_E2E_IDENTITY: local-signin
+          DATABASE_URL: postgres://poii:test-only-password@127.0.0.1:5432/poii_e2e_signin
+          SMOKE_API_PORT: "3101"
+          SMOKE_WEB_PORT: "3100"
+        run: |
+          docker exec "${{ job.services.postgres.id }}" psql -U poii -d postgres -v ON_ERROR_STOP=1 -qc 'CREATE DATABASE poii_e2e_signin'
+          pnpm --filter @poii/api migrate
+          POII_OWNER_BOOTSTRAP_PASSWORD="$(openssl rand -hex 16)"
+          POII_SESSION_SECRET="$(openssl rand -hex 32)"
+          echo "::add-mask::$POII_OWNER_BOOTSTRAP_PASSWORD"
+          echo "::add-mask::$POII_SESSION_SECRET"
+          export POII_OWNER_BOOTSTRAP_PASSWORD POII_SESSION_SECRET
+          pnpm --filter @poii/web smoke
       - name: Validate Dokploy Compose configuration
         env:
           POSTGRES_PASSWORD: ci-only-placeholder

@@ -18,6 +18,28 @@ export type IssuedCookie = { value: string; expires?: Date; maxAge?: number };
 const SESSION_VALUE = /^[A-Za-z0-9._%-]{1,512}$/;
 const isSessionValue = (value: string) => SESSION_VALUE.test(value);
 
+/** The same token without URL-encoding: the token, a dot and a base64 signature. */
+const RAW_SESSION_VALUE = /^[A-Za-z0-9._+/=-]{1,512}$/;
+
+/**
+ * The session token as the API's cookie carries it (URL-encoded), from whatever form the web cookie arrives in.
+ * Next hands the cookie over URL-encoded on an ordinary request, but already decoded when it renders the
+ * target of a server action's `redirect()` itself, which is what happens right after sign-in. Both forms name
+ * the same token, so both are brought to the decoded form, checked, and encoded once. Anything else gives null.
+ */
+export function apiSessionValue(value: string | undefined): string | null {
+  if (!value || value.length > 512) return null;
+  let raw = value;
+  if (raw.includes('%')) {
+    try {
+      raw = decodeURIComponent(raw);
+    } catch {
+      return null;
+    }
+  }
+  return RAW_SESSION_VALUE.test(raw) ? encodeURIComponent(raw) : null;
+}
+
 /** Finds and parses the API session cookie (either name) among Set-Cookie lines. Empty values (a cleared cookie) give null. */
 export function parseSessionSetCookie(lines: readonly string[]): IssuedCookie | null {
   for (const line of lines) {
@@ -91,9 +113,8 @@ export function sessionHeaders(sessionValue: string | undefined, webBaseUrl: str
   const headers: Record<string, string> = { [CSRF_HEADER]: '1' };
   const origin = webOrigin(webBaseUrl);
   if (origin) headers.origin = origin;
-  if (sessionValue && isSessionValue(sessionValue)) {
-    headers.cookie = `${API_SESSION_COOKIE}=${sessionValue}; ${API_SESSION_COOKIE_SECURE}=${sessionValue}`;
-  }
+  const session = apiSessionValue(sessionValue);
+  if (session) headers.cookie = `${API_SESSION_COOKIE}=${session}; ${API_SESSION_COOKIE_SECURE}=${session}`;
   return headers;
 }
 
