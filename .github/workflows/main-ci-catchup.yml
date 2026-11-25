@@ -2,14 +2,12 @@ name: Main CI catch-up
 # Routine PRs are merged by GitHub auto-merge, which `classify` enables with the workflow token. GitHub
 # starts no workflow for a push made with that token, so such a merge left `main` without CI and without
 # published images (#53 `7dff763`, #72 `efe2e04`). This workflow starts CI on `main` when its head commit
-# has no CI run.
-# KNOWN GAP, observed on 2026-11-25 (#81, `d0edd19`): the CI run this workflow starts is started with the
-# workflow token too, and GitHub raises no `workflow_run` event when such a run finishes. So "Publish
-# immutable images" does NOT follow it: the commit gets CI but no images and no deploy. The same CI
-# workflow dispatched by the bot app was followed by publish and deploy within seven minutes. Until this
-# workflow starts CI with an identity other than the workflow token, an auto-merged commit reaches
-# staging with the next merge pressed by a person, or when someone dispatches CI on `main` as the bot.
-# It reads pull request and run metadata only. It never checks out or runs code from a pull request.
+# has no CI run. GitHub also raises no `workflow_run` event when a run started with the workflow token
+# finishes (observed on 2026-11-25 with #81), so nothing would follow that CI run. The script therefore
+# walks the rest of the release path itself: the image publish, the staging deploy, and the start of
+# the production promotion, each only after the step before succeeded.
+# Logic and tests: infra/scripts/main-ci-catchup.sh, main-ci-catchup.test.mjs.
+# It reads pull request and run metadata and starts workflows on main. It never checks out or runs code from a pull request.
 on:
   # An auto-merge lands when the last required check finishes. That is usually CI, but it is the risk
   # classification when that one finishes last, for example after a re-run (#81 on 2026-11-25: `classify`
@@ -25,7 +23,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
-  # To start the CI workflow on main (workflow_dispatch is the one event the workflow token may raise).
+  # To start CI, the publish and the deploys on main (workflow_dispatch is the one event the workflow token may raise).
   actions: write
 concurrency:
   group: main-ci-catchup
@@ -41,75 +39,21 @@ jobs:
        github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # CI, the image publish and the staging deploy are awaited one after the other.
+    timeout-minutes: 120
     steps:
-      - name: Start CI on main when its head commit has none
+      # workflow_run, schedule and workflow_dispatch all run in the context of the default branch, so this
+      # checks out main: the script is the reviewed one, never code from a pull request.
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: infra/scripts
+      - name: Walk the release path for a head commit of main that has no CI run
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           EVENT: ${{ github.event_name }}
           PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
-        run: |
-          set -euo pipefail
-          note() { echo "$1" | tee -a "$GITHUB_STEP_SUMMARY"; }
-          echo "## Main CI catch-up" >> "$GITHUB_STEP_SUMMARY"
-
-          if [ "$EVENT" = workflow_run ]; then
-            # GitHub leaves the run's pull request list empty once the pull request is merged or closed, which an
-            # auto-merge can be by the time this runs. Then only the head of main is looked at, below: that
-            # check starts CI solely for a head commit that has none and is at least a minute old.
-            if ! [[ "${PR_NUMBER:-}" =~ ^[0-9]+$ ]]; then
-              note "The finished run names no pull request. Looking at the head of main only."
-              state=unknown
-            else
-            # Auto-merge lands seconds after the last required check. Wait for it, at most three minutes.
-            state=waiting
-            for _ in $(seq 1 12); do
-              state="$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '
-                if .merged then (if .merged_by.login == "github-actions[bot]" then "auto-merged" else "merged-by-someone" end)
-                elif .state != "open" then "closed"
-                elif .auto_merge != null then "waiting"
-                else "no-auto-merge" end')"
-              [ "$state" = waiting ] || break
-              sleep 15
-            done
-            case "$state" in
-              auto-merged) note "PR #$PR_NUMBER was merged by auto-merge." ;;
-              merged-by-someone) note "PR #$PR_NUMBER was merged by a person or an app; that push starts CI itself."; exit 0 ;;
-              waiting) note "PR #$PR_NUMBER has auto-merge on but has not merged yet. The scheduled run covers it."; exit 0 ;;
-              *) note "PR #$PR_NUMBER is not auto-merging ($state). Nothing to do."; exit 0 ;;
-            esac
-            fi
-          fi
-
-          # Prints how many CI runs exist for a main commit. A failed or odd answer stops the job: it must
-          # never be read as "no run", which would start CI needlessly.
-          ci_runs() {
-            local count
-            count="$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?branch=main&head_sha=$1&per_page=1" --jq .total_count)"
-            [[ "$count" =~ ^[0-9]+$ ]] || { note "Could not count the CI runs of \`$1\`."; exit 1; }
-            echo "$count"
-          }
-
-          head="$(gh api "repos/$REPO/commits/main")"
-          sha="$(jq -r .sha <<<"$head")"
-          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { note "Could not read the head of main."; exit 1; }
-          runs="$(ci_runs "$sha")"
-          if [ "$runs" -gt 0 ]; then note "main \`$sha\` already has a CI run. Nothing to do."; exit 0; fi
-          # A push by a person starts CI within seconds; do not race it.
-          age=$(( $(date +%s) - $(date -d "$(jq -r .commit.committer.date <<<"$head")" +%s) ))
-          if [ "$age" -lt 60 ]; then
-            sleep $(( 60 - age ))
-            runs="$(ci_runs "$sha")"
-            if [ "$runs" -gt 0 ]; then note "main \`$sha\` already has a CI run. Nothing to do."; exit 0; fi
-          fi
-
-          gh workflow run ci.yml --repo "$REPO" --ref main
-          note "main \`$sha\` had no CI run (merged with the workflow token). Started CI on main."
-          # Let the new run appear before the next queued catch-up looks, so it does not start a second one.
-          for _ in $(seq 1 12); do
-            runs="$(ci_runs "$sha")"
-            if [ "$runs" -gt 0 ]; then exit 0; fi
-            sleep 5
-          done
-          note "The started run is not listed yet after a minute; check the Actions tab."
+          STAGING_ENABLED: ${{ vars.POII_STAGING_ENABLED }}
+          PRODUCTION_ENABLED: ${{ vars.POII_PRODUCTION_ENABLED }}
+        run: bash infra/scripts/main-ci-catchup.sh
