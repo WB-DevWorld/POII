@@ -84,6 +84,30 @@ Found on 2026-11-25 between 13:36 and 15:30 UTC. It was not POII.
 - One leftover in that browser: a script file of the record page stayed pending when requested through the browser's cache, held by a request left over from a stall, while the same file fetched past the cache came back in 0.2 s. Fetching it once with the cache bypassed cleared it. Restarting the browser clears any other such leftover.
 - The two earlier guesses are settled as follows. The missing time limits were real and are fixed by PR #77, but they were not the cause. The shared Dokploy network (Isolated Deployment off) is not needed to explain anything seen; it has still not been examined.
 
+### Later deploys on 2026-11-25
+
+Staging serves `4c6e7964f86ab07be721fa9d0cd3ad4f3d745a08` since 17:11 UTC. Each row is a `Deploy staging` run whose smoke passed and whose manifest is under `infra/releases/`.
+
+| Source | Deployed (UTC) | Deploy staging run | Digests | Manifest |
+| --- | --- | --- | --- | --- |
+| `3f3e68feaca52b0edfc34fb6c0960ac63aa01868` (PR #79, merged by the owner) | 2026-11-25 15:39:11 | [45647426749](https://github.com/WB-DevWorld/POII/actions/runs/45647426749), after publish run [45647139727](https://github.com/WB-DevWorld/POII/actions/runs/45647139727) | API `ghcr.io/wb-devworld/poii-api@sha256:9752fa0940768e4bbe1ca5342c03442290928dc3a474caa5890c31896978e51f`; web `ghcr.io/wb-devworld/poii-web@sha256:9039929d77e53234f0cd2bb07d560baacc4b00256c77e516415a63c94603e752` | `staging-20261125T153911Z-3f3e68feaca5.json` |
+| `d0edd198ee1cf92a55cf90816b70c05963b09c52` (PR #81, merged by auto-merge) | 2026-11-25 16:47:32 | [45657579093](https://github.com/WB-DevWorld/POII/actions/runs/45657579093), after publish run [45657165730](https://github.com/WB-DevWorld/POII/actions/runs/45657165730) | API `ghcr.io/wb-devworld/poii-api@sha256:ba00eaa598c8293ef25e09d96aa8aea48d3f397afd91c426a8dd384785b74fe6`; web `ghcr.io/wb-devworld/poii-web@sha256:f1a7340fe26cbdcd262b7de2ba202f8cb6ed704f2cf67f9ee080e5c520a2db08` | `staging-20261125T164732Z-d0edd198ee1c.json` |
+| `4c6e7964f86ab07be721fa9d0cd3ad4f3d745a08` (PR #85, the last of five merged by the owner within two minutes) | 2026-11-25 17:11:38 | [45661960922](https://github.com/WB-DevWorld/POII/actions/runs/45661960922), after publish run [45661614158](https://github.com/WB-DevWorld/POII/actions/runs/45661614158) | API `ghcr.io/wb-devworld/poii-api@sha256:46d5b23db752cfa0bd872ca4464e9713bfec0c1e3b0bc4cd2b0304409dbc14fc`; web `ghcr.io/wb-devworld/poii-web@sha256:433f11c02d036738707cf618abb99348537f0e2c2cb4c20371b08f8a8c3af24c` | `staging-20261125T171138Z-4c6e7964f86a.json` |
+
+- From the deploy of `4c6e796` on, the smoke also checks that the host offers no HTTP/3 (#80): "no HTTP/3 offer (no Alt-Svc header naming h3)" passed in that run.
+- `Deploy production` (#85) started after that staging deploy, said that production deploys are switched off, and deployed nothing: [run 45662164615](https://github.com/WB-DevWorld/POII/actions/runs/45662164615). It does start as the link after CI, publish and `Deploy staging`.
+- [Deploy staging run 45661277560](https://github.com/WB-DevWorld/POII/actions/runs/45661277560) stopped in its `gate` job, as designed: five merges landed within two minutes, the publish run of the first was reported for the last, and the gate refuses that mismatch. The next chain deployed.
+- Not observed: the sign-in fix of #82 on staging itself. It needs a person to sign out and in.
+
+### What happened after the first auto-merge
+
+#81 was the first pull request to merge by auto-merge since `main-ci-catchup.yml` exists (16:21 UTC, `d0edd198ee1cf92a55cf90816b70c05963b09c52`).
+
+- Nothing started CI on `main`. The pull request's `classify` check had failed on a GitHub outage, was re-run, and finished eleven minutes after CI; the catch-up listened only for CI finishing. The bot dispatched the catch-up by hand at 16:29 UTC, and it started CI. #84 added the second trigger.
+- That CI run passed at 16:33 UTC and nothing followed it: no publish, no deploy. GitHub raises no `workflow_run` event when a run started with the workflow token finishes. The two catch-up runs at 16:32 and 16:33 UTC came from the CI runs of two open pull requests.
+- The same CI workflow dispatched by the bot app at 16:40 UTC was followed by the publish and the deploy in the table above; staging served `d0edd19` at 16:47 UTC.
+- GitHub reported a partial outage from about 15:54 to 16:35 UTC. During it, checks failed on GitHub's own errors (the labels call of `classify`, the upload of a CodeQL result) and re-runs were refused for a while.
+
 ## 2026-11-24
 
 ### First staging deployment
