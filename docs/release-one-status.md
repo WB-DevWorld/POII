@@ -1,6 +1,6 @@
 # Release one: where it stands
 
-Written 2026-11-25 against `main` `3f3e68f`; updated the same evening against `4c6e796`, after #80 to #85 merged. Release one is M1 plus M2 (`BUILD-BASELINE.md` §3). This page maps each acceptance criterion of §8 to the evidence that exists today and lists what is still open before the owner can accept release one and before production can be activated. It records evidence; it does not declare anything accepted. Acceptance and the activation phrase are the owner's.
+Written 2026-11-25 against `main` `3f3e68f`; updated the same evening against `4c6e796`, after #80 to #85 merged, and that night against `a56f684`, after #86 to #88. Release one is M1 plus M2 (`BUILD-BASELINE.md` §3). This page maps each acceptance criterion of §8 to the evidence that exists today and lists what is still open before the owner can accept release one and before production can be activated. It records evidence; it does not declare anything accepted. Acceptance and the activation phrase are the owner's.
 
 How to read the verdicts: **covered** means an automated test that runs in CI on every pull request proves the claim; **partly** means a named part is not proven by any test; **staging** means it was also observed on the live staging host (`LIVE-ENVIRONMENT-FACTS.md`).
 
@@ -41,7 +41,7 @@ The tests run with AI and peers switched off unless the row says otherwise. Test
 | Gap | Why it matters | Size |
 | --- | --- | --- |
 | The production promotion workflow has never run. `deploy-production.yml` (#85) is on `main`, switched off. | What GitHub does with waiting approvals, the concurrency group and the owner as both actor and reviewer can only be seen on a first real run (ADR-0013). | Depends on the owner's setup; then a dry run. |
-| An auto-merged commit gets CI but no images and no deploy. | Routine changes reach staging only with the next merge pressed by a person, or when CI is started as the bot. | #86 (open when this was written) makes the catch-up walk the whole path. |
+| An auto-merged commit reaching staging by itself is not proven on GitHub yet. | #86 (merged 2026-11-25) makes the catch-up walk the whole release path: CI, publish, staging deploy. Its tests run against a stand-in for GitHub. | The proof is the first routine pull request that merges by itself after #86 and ends in a staging deploy with nobody starting anything. The pull request that wrote this line is that attempt; `LIVE-ENVIRONMENT-FACTS.md` gets the outcome. |
 | `drizzle-kit generate` would write a wrong migration. `apps/api/drizzle/meta` holds snapshots only for migrations 0000 and 0001. | Nothing at run time uses the generator, but the next generated migration would recreate ten tables. | Small, in the schema class: regenerate the snapshots and prove a no-op. |
 | Criterion 10: images, server logs and the Playwright report of the local-owner run are not scanned. | A claim of §8 that rests on file names and git history only. | Medium. |
 | The browser journey covers one fixture and skips lifecycle status, backup and restore. | Those pages have no browser test. | Medium. |
@@ -52,4 +52,4 @@ The tests run with AI and peers switched off unless the row says otherwise. Test
 - Local sign-in and owner tokens (#14): merged, in CI, and used on staging by the owner since 2026-11-24. The defect found on 2026-11-25 (the sign-in form stayed after a correct password until a reload) is fixed by #82, and a browser test of sign-in runs in CI.
 - Staging with continuous deployment (#15): every merge to `main` pressed by a person deploys to staging since 2026-11-24; six release manifests are recorded under `infra/releases/`.
 - The page hang seen on staging on 2026-11-25 was the HTTP/3 offer of the server's Traefik, not POII. The staging smoke fails if the offer comes back (#80).
-- The moderate dependency advisories of 2026-11-25 (hono, `@hono/node-server`, esbuild): cleared by #87 (open when this was written); none was reachable in POII.
+- The moderate dependency advisories of 2026-11-25 (hono, `@hono/node-server`, esbuild): cleared by #87, which merged by auto-merge on 2026-11-25; none was reachable in POII. `pnpm audit` reports no known vulnerabilities.
