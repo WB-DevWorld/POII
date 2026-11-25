@@ -2,6 +2,36 @@
 
 Newest entry first. Every entry says what was run and what was not. Mocked work is labelled mocked.
 
+## Sign-in defect, acceptance tests, the production path written, two holes after an auto-merge — 2026-11-25 UTC (evening)
+
+Continues the entry below. `docs/release-one-status.md` is updated with it.
+
+Merged to `main`. The owner approved each gated one on its head commit and pressed Merge, 17:01 to 17:03 UTC; #81 merged by auto-merge at 16:21 UTC.
+
+- [#81](https://github.com/WB-DevWorld/POII/pull/81) `d0edd19`: the ledger entry below and `docs/release-one-status.md`.
+- [#82](https://github.com/WB-DevWorld/POII/pull/82) `f099fae`: **a defect in sign-in, found by a new browser test.** After a correct password the address changed to the requested page, but the page still showed the sign-in form until a reload. Next renders the target of the sign-in action's redirect itself and hands the just-set cookie over already URL-decoded; the web app accepted only the encoded form, so that one request reached the API without a session. Fixed in `apps/web/src/lib/session.ts`. The test (`apps/web/test/signin.spec.ts`, a CI step under `local-signin`) fails without the fix.
+- [#80](https://github.com/WB-DevWorld/POII/pull/80) `e573ead`: the staging smoke fails while the host offers HTTP/3.
+- [#83](https://github.com/WB-DevWorld/POII/pull/83) `3b58daa`: eleven API tests for four acceptance claims that had no direct test (intent and observed both shown; the manual path with a provider down; a backup after a deletion; never-send text in the process output), and `restore-drill.sh` as a CI step. No application code changed.
+- [#84](https://github.com/WB-DevWorld/POII/pull/84) `b514d82`: the catch-up also follows the risk classification.
+- [#85](https://github.com/WB-DevWorld/POII/pull/85) `4c6e796`: `deploy-production.yml`, `infra/scripts/promotion-class.mjs`, ADR-0013 and `docs/runbooks/production-deploy.md`. **Written, never run:** it is switched off and no production exists.
+
+Issues: #14 and #15 closed as completed with their evidence; status comments on #13, #16 and #22.
+
+What was run: on #82, the new browser test failing on `main` and passing with the fix, the four existing browser tests, web 48 tests. On #83, the API suite at 180 tests on a migrated throwaway database, three times, and the log test against a deliberate break. On #85, 105 script tests, and the classification read-only against this repository's own history. On #80, the script against live staging. CI green on every merged head; the new CI steps (sign-in run, restore drill) ran for the first time on GitHub in those runs and passed. On staging: see `LIVE-ENVIRONMENT-FACTS.md`, "Later deploys on 2026-11-25".
+
+Not run: `deploy-production.yml` beyond its switched-off gate; the sign-in fix on staging itself; everything already listed as not run in the entry below. MOCKED and labelled so: `gh` in the script tests of #85, the providers in the new tests of #83.
+
+Found and not yet fixed when this was written:
+
+- After an auto-merge the catch-up gives the commit CI but no images and no deploy (`LIVE-ENVIRONMENT-FACTS.md`, "What happened after the first auto-merge"). [#86](https://github.com/WB-DevWorld/POII/pull/86), open, makes it walk the whole release path.
+- `pnpm audit` on `main` reported 7 moderate and 1 low advisory, none high, none reachable in POII. [#87](https://github.com/WB-DevWorld/POII/pull/87), open, clears them.
+- `drizzle-kit generate` on `main` would write a migration that recreates ten tables: `apps/api/drizzle/meta` holds snapshots only for migrations 0000 and 0001. Nothing at run time uses the generator.
+- What a deletion leaves behind on the instance (a pack exported earlier, stored idempotency replies, the title in earlier pack manifests): listed in #83 for the owner's decision.
+
+Delegation, for the record: three of these changes were built by helper sessions of the agent from written briefs (the sign-in test, which found the defect and stopped as briefed; the acceptance tests; the production workflow). The agent read each result, reran the tests and wrote the fix for the sign-in defect itself.
+
+Owner questions still open, in addition to those in the entry below: the class of deploy-record pull requests (each one makes the next production promotion gated); what to do with what a deletion leaves behind; the production setup.
+
 ## Staging live, first real AI call, the HTTP/3 stall — 2026-11-25 UTC
 
 This entry covers 2026-10-13 to 2026-11-25. Nothing was written here in that time; the observations went to `LIVE-ENVIRONMENT-FACTS.md` and the pull requests. `docs/release-one-status.md` (new with this entry) maps the acceptance criteria to the evidence and lists what is open.
