@@ -8,8 +8,17 @@ export type Db = {
   close: () => Promise<void>;
 };
 
+/**
+ * How long a query waits for a connection: a new one to Postgres, or a free one when all `max` are busy.
+ * pg's default is to wait for ever, which turns an unreachable database into requests that never answer.
+ */
+export const DB_CONNECTION_TIMEOUT_MS = 10_000;
+
 export function createDb(connectionString: string, max = 10): Db {
-  const pool = new Pool({ connectionString, max });
+  // keepAlive lets the operating system notice a connection whose other end is gone.
+  const pool = new Pool({ connectionString, max, connectionTimeoutMillis: DB_CONNECTION_TIMEOUT_MS, keepAlive: true });
+  // An idle connection that breaks is dropped by the pool. Without a listener the event would end the process.
+  pool.on('error', error => console.error(`[db] idle connection lost: ${error.message}`));
   const orm = drizzle(pool, { schema });
   return { pool, orm, close: () => pool.end() };
 }

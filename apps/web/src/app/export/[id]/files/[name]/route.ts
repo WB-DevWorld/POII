@@ -1,5 +1,6 @@
 // #19 Proxies one generated agent instructions file (AGENTS.md or CLAUDE.md) from the API as a download.
 import { apiRaw } from '@/lib/api';
+import { API_LONG_TIMEOUT_MS } from '@/lib/timeouts';
 import { agentFileApiPath, isAgentFileName } from '@/lib/agent-instructions';
 import { downloadHeaders, problemResponse } from '@/lib/download';
 
@@ -12,7 +13,7 @@ export async function GET(_request: Request, { params }: { params: Params }) {
   if (!isAgentFileName(name)) return new Response('Unknown file', { status: 404 });
   let upstream: Response;
   try {
-    upstream = await apiRaw(agentFileApiPath(id, name), { headers: { accept: 'text/markdown' } });
+    upstream = await apiRaw(agentFileApiPath(id, name), { headers: { accept: 'text/markdown' }, timeoutMs: API_LONG_TIMEOUT_MS });
   } catch {
     return problemResponse(502, 'api_unreachable', 'The POII API is not reachable.');
   }

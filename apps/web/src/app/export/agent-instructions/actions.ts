@@ -5,11 +5,12 @@ import { redirect } from 'next/navigation';
 import type { AgentInstructionsResponse } from '@poii/contracts';
 import type { ActionState } from '@/lib/action-state';
 import { apiJson, toProblem } from '@/lib/api';
+import { API_LONG_TIMEOUT_MS } from '@/lib/timeouts';
 
 export async function createAgentInstructionsAction(_state: ActionState, _fd: FormData): Promise<ActionState> {
   let run: AgentInstructionsResponse;
   try {
-    run = await apiJson<AgentInstructionsResponse>('/v1/exports/agent-instructions', { method: 'POST', body: {} });
+    run = await apiJson<AgentInstructionsResponse>('/v1/exports/agent-instructions', { method: 'POST', body: {}, timeoutMs: API_LONG_TIMEOUT_MS });
   } catch (error) {
     return { ok: false, problem: toProblem(error) };
   }

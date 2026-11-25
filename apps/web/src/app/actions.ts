@@ -15,6 +15,7 @@ import type {
 import { lifecycleStatuses, recordKinds, reviewStates, statedRoles, statementModes, timeStatuses } from '@poii/contracts';
 import type { ActionState } from '@/lib/action-state';
 import { apiJson, toProblem, type Problem } from '@/lib/api';
+import { API_LONG_TIMEOUT_MS } from '@/lib/timeouts';
 import { isoFromInput, parseConflictLines, type TimeConflictValue } from '@/lib/format';
 import { guessMediaType, looksBinary } from '@/lib/upload';
 
@@ -376,6 +377,7 @@ export async function createContextPackAction(_state: ActionState, fd: FormData)
     const title = trimmed(fd, 'title');
     pack = await apiJson<ContextPackResponse>('/v1/exports/context-pack', {
       method: 'POST',
+      timeoutMs: API_LONG_TIMEOUT_MS,
       body: {
         destination,
         ...(kinds.length ? { kinds } : {}),
@@ -404,7 +406,7 @@ export async function restoreAction(_state: ActionState, fd: FormData): Promise<
       throw new InputProblem('That file is not valid JSON. Choose a file downloaded from "Download backup".');
     }
     if (!backup || typeof backup !== 'object' || Array.isArray(backup)) throw new InputProblem('That file is not a POII backup.');
-    const result = await apiJson<RestoreResult>('/v1/restore', { method: 'POST', body: { backup } });
+    const result = await apiJson<RestoreResult>('/v1/restore', { method: 'POST', body: { backup }, timeoutMs: API_LONG_TIMEOUT_MS });
     const parts = Object.entries(result.restored).map(([key, n]) => `${n} ${key}`);
     return { ok: true, message: `Restore finished into workspace ${result.workspaceId}: ${parts.join(', ')}.` };
   } catch (error) {

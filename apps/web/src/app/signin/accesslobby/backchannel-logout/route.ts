@@ -3,6 +3,7 @@
 // token against AccessLobby's JWKS and ends the sessions; this route forwards nothing else (in particular no
 // session cookie) and answers only the status: 200, or 400 for an invalid token.
 import { apiBase } from '@/lib/api';
+import { API_TIMEOUT_MS } from '@/lib/timeouts';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,6 +22,7 @@ export async function POST(request: Request) {
       headers: { 'content-type': 'application/json', accept: 'application/json' },
       body: JSON.stringify({ logout_token: token }),
       cache: 'no-store',
+      signal: AbortSignal.timeout(API_TIMEOUT_MS),
     });
     return reply(upstream.status === 200 ? 200 : upstream.status >= 500 ? 503 : 400);
   } catch {

@@ -4,6 +4,7 @@
 // JSON to the API, which validates the shape, and returns either the preview or the per-conversation outcomes.
 import type { ConversationImportResponse, ConversationPreviewResponse } from '@poii/contracts';
 import { apiJson, toProblem, type Problem } from '@/lib/api';
+import { API_LONG_TIMEOUT_MS } from '@/lib/timeouts';
 import { checkExportFile, MAX_SELECTED, parseExportText } from './logic';
 
 export type PreviewState = { ok: true; preview: ConversationPreviewResponse } | { ok: false; problem: Problem };
@@ -27,7 +28,7 @@ export async function previewConversationsAction(fd: FormData): Promise<PreviewS
   if (!file.ok) return invalid(file.message);
   try {
     const preview = await apiJson<ConversationPreviewResponse>('/v1/imports/conversations/preview', {
-      method: 'POST', body: { file: file.data, fileName: file.fileName },
+      method: 'POST', body: { file: file.data, fileName: file.fileName }, timeoutMs: API_LONG_TIMEOUT_MS,
     });
     return { ok: true, preview };
   } catch (error) {
@@ -52,6 +53,7 @@ export async function importConversationsAction(fd: FormData): Promise<ImportSta
   try {
     const result = await apiJson<ConversationImportResponse>('/v1/imports/conversations', {
       method: 'POST',
+      timeoutMs: API_LONG_TIMEOUT_MS,
       body: { file: file.data, fileName: file.fileName, conversationIds, aiAllowed: fd.get('neverSendToAi') !== 'on' },
     });
     return { ok: true, result };
