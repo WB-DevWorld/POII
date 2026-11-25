@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation';
 import type { AiExecuteResponse, AiPreviewResponse } from '@poii/contracts';
 import type { ActionState } from '@/lib/action-state';
 import { apiJson, toProblem, type Problem } from '@/lib/api';
+import { API_LONG_TIMEOUT_MS } from '@/lib/timeouts';
 import { aiPageHref, parsePreviewForm } from './logic';
 
 export type AiSendState = { ok: true; result: AiExecuteResponse } | { ok: false; problem: Problem } | null;
@@ -28,7 +29,7 @@ export async function executeAiAction(_state: AiSendState, fd: FormData): Promis
   const previewId = fd.get('previewId');
   if (typeof previewId !== 'string' || !previewId) return { ok: false, problem: { code: 'invalid_input', message: 'The preview is missing.' } };
   try {
-    const result = await apiJson<AiExecuteResponse>('/v1/ai/execute', { method: 'POST', body: { previewId } });
+    const result = await apiJson<AiExecuteResponse>('/v1/ai/execute', { method: 'POST', body: { previewId }, timeoutMs: API_LONG_TIMEOUT_MS });
     return { ok: true, result };
   } catch (error) {
     return { ok: false, problem: toProblem(error) };

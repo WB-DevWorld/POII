@@ -5,6 +5,7 @@
 //    to /signin and drops a dead cookie. With local-owner the API always answers 200, so nothing changes.
 import { NextResponse, type NextRequest } from 'next/server';
 import { PATH_HEADER, SESSION_COOKIE, sessionHeaders } from '@/lib/session';
+import { API_SESSION_CHECK_TIMEOUT_MS } from '@/lib/timeouts';
 
 const SAFE = new Set(['GET', 'HEAD', 'OPTIONS']);
 
@@ -42,10 +43,11 @@ export async function proxy(request: NextRequest) {
     const response = await fetch(`${process.env.API_INTERNAL_URL ?? 'http://localhost:3001'}/v1/me`, {
       headers: { accept: 'application/json', ...sessionHeaders(session) },
       cache: 'no-store',
+      signal: AbortSignal.timeout(API_SESSION_CHECK_TIMEOUT_MS),
     });
     status = response.status;
   } catch {
-    return pass(request); // API unreachable: let the page render its own notice.
+    return pass(request); // API unreachable or too slow: let the page render its own notice.
   }
   if (status !== 401) return pass(request);
   const target = new URL('/signin', request.url);

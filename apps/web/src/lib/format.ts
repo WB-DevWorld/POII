@@ -160,6 +160,8 @@ export function explainCode(code: string): string | null {
       return 'This record is already confirmed.';
     case 'api_unreachable':
       return 'The POII API is not reachable right now. Nothing was changed.';
+    case 'api_timeout':
+      return 'The POII API did not answer in time. If you were making a change, check whether it was saved before you try again.';
     default:
       return null;
   }

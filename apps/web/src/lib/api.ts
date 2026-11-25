@@ -1,6 +1,7 @@
 // Server-side access to the POII API. The web app never talks to the database directly.
 // Every call forwards the browser's session token (local-signin), the CSRF header and the web app's Origin (ADR-0009).
 import { PATH_HEADER, safeNextPath, sessionHeaders, SESSION_COOKIE } from './session';
+import { API_TIMEOUT_MS } from './timeouts';
 export const apiBase = () => process.env.API_INTERNAL_URL ?? 'http://localhost:3001';
 
 /** The API's error body: `{ error, message, requestId, details? }`. */
@@ -27,7 +28,19 @@ export class ApiError extends Error {
   }
 }
 
-export type JsonInit = Omit<RequestInit, 'body'> & { body?: unknown; idempotencyKey?: string };
+/**
+ * The API did not answer within the limit. `requestId` is the `x-request-id` this call sent, which the API
+ * echoes into its own log lines, so a stuck request can be found there.
+ */
+export class ApiTimeoutError extends Error {
+  constructor(public readonly timeoutMs: number, public readonly requestId: string) {
+    super(`API timeout after ${timeoutMs} ms`);
+    this.name = 'ApiTimeoutError';
+  }
+}
+
+/** `timeoutMs`: how long to wait for the complete answer (default API_TIMEOUT_MS; see ./timeouts). */
+export type JsonInit = Omit<RequestInit, 'body'> & { body?: unknown; idempotencyKey?: string; timeoutMs?: number };
 
 /** `/signin`, with `next` set to the page being rendered when the proxy told us which one it is. */
 export async function signInPath(): Promise<string> {
@@ -56,21 +69,43 @@ export async function currentSession(): Promise<string | undefined> {
   }
 }
 
-async function buildInit(init: JsonInit): Promise<RequestInit> {
-  const { body, idempotencyKey, headers, ...rest } = init;
-  const extra: Record<string, string> = sessionHeaders(await currentSession());
+type Call = { init: RequestInit; timeoutMs: number; requestId: string };
+
+async function buildCall(init: JsonInit): Promise<Call> {
+  const { body, idempotencyKey, headers, timeoutMs = API_TIMEOUT_MS, signal, ...rest } = init;
+  const requestId = crypto.randomUUID();
+  const extra: Record<string, string> = { 'x-request-id': requestId, ...sessionHeaders(await currentSession()) };
   if (idempotencyKey) extra['idempotency-key'] = idempotencyKey;
+  const limit = AbortSignal.timeout(timeoutMs);
   return {
-    ...rest,
-    headers: { accept: 'application/json', 'content-type': 'application/json', ...extra, ...((headers as Record<string, string>) ?? {}) },
-    body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
-    cache: 'no-store',
+    timeoutMs,
+    requestId,
+    init: {
+      ...rest,
+      headers: { accept: 'application/json', 'content-type': 'application/json', ...extra, ...((headers as Record<string, string>) ?? {}) },
+      body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
+      cache: 'no-store',
+      // The limit covers the whole answer: it also ends a body that stops arriving.
+      signal: signal ? AbortSignal.any([signal, limit]) : limit,
+    },
   };
 }
 
+/** A fetch that ran into its AbortSignal.timeout becomes an ApiTimeoutError; every other failure is kept. */
+function failure(error: unknown, call: Call): unknown {
+  return error instanceof Error && error.name === 'TimeoutError' ? new ApiTimeoutError(call.timeoutMs, call.requestId) : error;
+}
+
 export async function apiJson<T>(path: string, init: JsonInit = {}): Promise<T> {
-  const response = await fetch(`${apiBase()}${path}`, await buildInit(init));
-  const text = await response.text();
+  const call = await buildCall(init);
+  let response: Response;
+  let text: string;
+  try {
+    response = await fetch(`${apiBase()}${path}`, call.init);
+    text = await response.text();
+  } catch (error) {
+    throw failure(error, call);
+  }
   let body: unknown = null;
   if (text) {
     try {
@@ -83,9 +118,17 @@ export async function apiJson<T>(path: string, init: JsonInit = {}): Promise<T> 
   return body as T;
 }
 
-/** Raw response, for route handlers that proxy a download. */
+/**
+ * Raw response, for route handlers that proxy a download. The limit keeps running while the body is read,
+ * so a download gets API_LONG_TIMEOUT_MS from its caller.
+ */
 export async function apiRaw(path: string, init: JsonInit = {}): Promise<Response> {
-  return fetch(`${apiBase()}${path}`, await buildInit(init));
+  const call = await buildCall(init);
+  try {
+    return await fetch(`${apiBase()}${path}`, call.init);
+  } catch (error) {
+    throw failure(error, call);
+  }
 }
 
 /** A readable problem: the API's error code and message, or a connection failure. */
@@ -98,6 +141,10 @@ export function toProblem(error: unknown): Problem {
   if (error instanceof ApiError) {
     const issues = issueLines((error.body as Partial<ApiErrorBody> | null)?.details);
     return { code: error.code, message: error.detail, status: error.status, requestId: error.requestId, ...(issues.length ? { issues } : {}) };
+  }
+  if (error instanceof ApiTimeoutError) {
+    const seconds = Math.round(error.timeoutMs / 1000);
+    return { code: 'api_timeout', message: `The API did not answer within ${seconds} seconds.`, requestId: error.requestId };
   }
   if (error instanceof Error) return { code: 'api_unreachable', message: `The API could not be reached (${error.message}).` };
   return { code: 'unknown_error', message: 'Something went wrong.' };

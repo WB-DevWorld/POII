@@ -1,5 +1,6 @@
 // Proxies a stored export from the API as a download.
 import { apiRaw } from '@/lib/api';
+import { API_LONG_TIMEOUT_MS } from '@/lib/timeouts';
 import { downloadHeaders, problemResponse } from '@/lib/download';
 
 export const dynamic = 'force-dynamic';
@@ -11,7 +12,7 @@ export async function GET(_request: Request, { params }: { params: Params }) {
   if (format !== 'markdown' && format !== 'json') return new Response('Unknown format', { status: 404 });
   let upstream: Response;
   try {
-    upstream = await apiRaw(`/v1/exports/${encodeURIComponent(id)}`);
+    upstream = await apiRaw(`/v1/exports/${encodeURIComponent(id)}`, { timeoutMs: API_LONG_TIMEOUT_MS });
   } catch {
     return problemResponse(502, 'api_unreachable', 'The POII API is not reachable.');
   }
