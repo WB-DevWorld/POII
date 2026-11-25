@@ -12,11 +12,11 @@ Version 3 · 2026-10-10 · Version 1 was approved by the owner with the build co
 ## Release path
 
 1. On merge to `main`, CI builds one immutable image per app and pushes it to GHCR, tagged with the commit SHA and identified by digest.
-2. That digest is deployed to staging automatically (M2, not yet active).
+2. That digest is deployed to staging automatically (active since 2026-11-24: `deploy-staging.yml`, ADR-0010).
 3. Smoke, acceptance and migration checks run on staging.
-4. If the change is routine and staging is green, the same digest is promoted to production automatically (not before the first production activation).
+4. If the change is routine and staging is green, the same digest is promoted to production automatically (not before the first production activation). `deploy-production.yml` implements this step (ADR-0013, `docs/runbooks/production-deploy.md`). It is switched off (repository variable `POII_PRODUCTION_ENABLED`) until the first production activation and has never run; no production exists yet.
 
-Gated changes go through the `production-gated` GitHub environment with the owner as required reviewer. Anything unclassified counts as gated.
+Gated changes go through the `production-gated` GitHub environment with the owner as required reviewer. Anything unclassified counts as gated. The workflow decides this for everything a promotion carries: it is routine only if every commit since the previous production deploy came in through a merged pull request labelled `risk:routine`; otherwise, and for the first deploy, it waits in `production-gated`.
 
 ## Gated classes
 

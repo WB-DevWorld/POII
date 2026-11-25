@@ -1,0 +1,338 @@
+name: Deploy production
+# Release policy step 4: promote the digests that staging deployed and checked to production. A routine
+# promotion runs in the `production` environment; a gated one waits for the owner in `production-gated`.
+# Runbook: docs/runbooks/production-deploy.md. Decisions: docs/adr/0013-production-promotion-mechanics.md.
+# A no-op until the repository variable POII_PRODUCTION_ENABLED is 'true'. Written, never run: no
+# production exists yet, and the first activation needs the owner's phrase (docs/release-policy.md).
+on:
+  workflow_run:
+    workflows: ["Deploy staging"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: "Full 40-hex main commit that staging deployed and checked (its staging manifest is the proof)"
+        required: true
+        type: string
+      dry_run:
+        description: "Only read and validate GitHub and Dokploy; change nothing"
+        required: false
+        type: boolean
+        default: false
+permissions: {}
+defaults:
+  run:
+    shell: bash  # bash -eo pipefail
+jobs:
+  # No environment and no secrets: decides whether anything is promoted, what, and in which class.
+  gate:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read        # checkout; compare commits
+      actions: read         # runs and artifacts of Deploy staging and Deploy production
+      pull-requests: read   # the pull request and labels each commit came in through
+    outputs:
+      enabled: ${{ steps.classify.outputs.promote }}
+      source_sha: ${{ steps.resolve.outputs.source_sha }}
+      promotion_class: ${{ steps.classify.outputs.promotion_class }}
+      previous_sha: ${{ steps.classify.outputs.previous_sha }}
+      staging_manifest: ${{ steps.classify.outputs.staging_manifest }}
+      api_image: ${{ steps.classify.outputs.api_image }}
+      web_image: ${{ steps.classify.outputs.web_image }}
+    steps:
+      - name: Check the switch
+        id: switch
+        env:
+          ENABLED: ${{ vars.POII_PRODUCTION_ENABLED }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          INPUT_SHA: ${{ inputs.source_sha }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          note() { echo "$1" | tee -a "$GITHUB_STEP_SUMMARY"; }
+          echo "## Deploy production" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$EVENT" = workflow_dispatch ] && [ "${INPUT_DRY_RUN:-}" = true ]; then
+            note "Dry run: GitHub and Dokploy are only read, never changed (allowed while production deploys are switched off)."
+          elif [ "${ENABLED:-}" != "true" ]; then
+            note "Production deploys are switched off: the repository variable \`POII_PRODUCTION_ENABLED\` is not \`true\`. Nothing was deployed. See docs/runbooks/production-deploy.md."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$EVENT" = workflow_dispatch ]; then
+            [ "$REF" = refs/heads/main ] || { note "Manual deploys run from main only."; exit 1; }
+            [[ "$INPUT_SHA" =~ ^[0-9a-f]{40}$ ]] || { note "source_sha must be a full 40-character lowercase hex SHA."; exit 1; }
+          fi
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+        if: steps.switch.outputs.enabled == 'true'
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        if: steps.switch.outputs.enabled == 'true'
+        with:
+          node-version: '24.19.0'
+
+      # After a staging run: that run's manifest. Manual dispatch: the newest staging manifest for the SHA.
+      # Either way only a successful main run of deploy-staging.yml in this repository counts.
+      - name: Find the staging release to promote
+        id: resolve
+        if: steps.switch.outputs.enabled == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          STAGING_RUN_ID: ${{ github.event.workflow_run.id }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: node infra/scripts/promotion-class.mjs resolve
+
+      - uses: actions/download-artifact@v8
+        if: steps.resolve.outputs.found == 'true'
+        with:
+          name: ${{ steps.resolve.outputs.staging_artifact }}
+          run-id: ${{ steps.resolve.outputs.staging_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/staging-manifest
+
+      # The staging manifest is the proof of what staging observed (environment staging, /health/ready
+      # reported the source SHA). The class is routine only if every commit since the previous production
+      # deploy came in through a merged pull request labelled risk:routine; everything else is gated.
+      - name: Check the staging manifest and decide the promotion class
+        id: classify
+        if: steps.resolve.outputs.found == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.resolve.outputs.source_sha }}
+          STAGING_RUN_ID: ${{ steps.resolve.outputs.staging_run_id }}
+          STAGING_MANIFEST_DIR: ${{ runner.temp }}/staging-manifest
+          EVENT_NAME: ${{ github.event_name }}
+        run: node infra/scripts/promotion-class.mjs classify
+
+  deploy:
+    needs: gate
+    if: needs.gate.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read        # checkout; compare commits (deploy-time check)
+      actions: read         # the previous production manifest
+      pull-requests: read   # deploy-time check of a routine range
+      packages: read        # verify the digests in GHCR
+    # Anything but exactly `routine` waits for the owner: `production-gated` has the owner as required reviewer.
+    environment:
+      name: ${{ needs.gate.outputs.promotion_class == 'routine' && 'production' || 'production-gated' }}
+      url: ${{ vars.PRODUCTION_WEB_BASE_URL }}
+    # One deploy at a time; a running deploy is never cancelled (a migration may be running). A dry run
+    # changes nothing, so it gets a group of its own and never displaces a deploy that is waiting.
+    concurrency:
+      group: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && format('deploy-production-dry-run-{0}', github.run_id) || 'deploy-production' }}
+      cancel-in-progress: false
+    env:
+      SOURCE_SHA: ${{ needs.gate.outputs.source_sha }}
+      PROMOTION_CLASS: ${{ needs.gate.outputs.promotion_class }}
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check production configuration is present
+        env:
+          HAS_URL: ${{ secrets.DOKPLOY_URL != '' }}
+          HAS_TOKEN: ${{ secrets.DOKPLOY_TOKEN != '' }}
+          HAS_COMPOSE: ${{ secrets.DOKPLOY_COMPOSE_ID != '' }}
+          WEB_BASE_URL: ${{ vars.PRODUCTION_WEB_BASE_URL }}
+        run: |
+          set -euo pipefail
+          environment=production-gated
+          [ "$PROMOTION_CLASS" = routine ] && environment=production
+          missing=()
+          [ "$HAS_URL" = true ] || missing+=("secret DOKPLOY_URL")
+          [ "$HAS_TOKEN" = true ] || missing+=("secret DOKPLOY_TOKEN")
+          [ "$HAS_COMPOSE" = true ] || missing+=("secret DOKPLOY_COMPOSE_ID")
+          [[ "${WEB_BASE_URL:-}" =~ ^https://[^/]+/?$ ]] || missing+=("variable PRODUCTION_WEB_BASE_URL (https origin, no path)")
+          if [ ${#missing[@]} -gt 0 ]; then
+            printf -- '- %s\n' "${missing[@]}" | { echo "**Production is not configured.** Missing in the \`$environment\` environment:"; cat; } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::The $environment environment is missing: ${missing[*]}"
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.19.0'
+
+      # This step runs after any approval and inside the concurrency group. The gate may have looked
+      # hours or days earlier: if production has moved since, a run for an older source ends here
+      # without touching Dokploy, and a routine run whose class no longer holds fails.
+      - name: Check that production has not moved past this run
+        id: fresh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GATE_PREVIOUS_SHA: ${{ needs.gate.outputs.previous_sha }}
+          GATE_CLASS: ${{ needs.gate.outputs.promotion_class }}
+        run: node infra/scripts/promotion-class.mjs recheck
+
+      - uses: actions/download-artifact@v8
+        if: steps.fresh.outputs.proceed == 'true' && steps.fresh.outputs.previous_artifact != ''
+        with:
+          name: ${{ steps.fresh.outputs.previous_artifact }}
+          run-id: ${{ steps.fresh.outputs.previous_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/previous-manifest
+
+      - name: Check the previous production manifest
+        id: previous
+        if: steps.fresh.outputs.proceed == 'true' && steps.fresh.outputs.previous_artifact != ''
+        env:
+          MANIFEST_DIR: ${{ runner.temp }}/previous-manifest
+          MANIFEST_ENVIRONMENT: production
+          MANIFEST_SHA: ${{ steps.fresh.outputs.previous_sha }}
+        run: node infra/scripts/promotion-class.mjs check-manifest
+
+      - name: Verify the image digests in GHCR
+        id: images
+        if: steps.fresh.outputs.proceed == 'true'
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+          API_IMAGE: ${{ needs.gate.outputs.api_image }}
+          WEB_IMAGE: ${{ needs.gate.outputs.web_image }}
+        run: |
+          set -euo pipefail
+          api="$API_IMAGE"; web="$WEB_IMAGE"
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::The source SHA from the gate is malformed"; exit 1; }
+          [[ "$api" =~ ^ghcr\.io/wb-devworld/poii-api@sha256:[0-9a-f]{64}$ ]] || { echo "::error::API image reference missing or malformed"; exit 1; }
+          [[ "$web" =~ ^ghcr\.io/wb-devworld/poii-web@sha256:[0-9a-f]{64}$ ]] || { echo "::error::Web image reference missing or malformed"; exit 1; }
+          # Cross-check against the registry: the sha-<SOURCE_SHA> tags must point at the digests staging deployed.
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin >/dev/null
+          for pair in "poii-api $api" "poii-web $web"; do
+            set -- $pair
+            tagged="$(docker buildx imagetools inspect "ghcr.io/wb-devworld/$1:sha-$SOURCE_SHA" --format '{{json .Manifest}}' | jq -r '.digest')"
+            [ "ghcr.io/wb-devworld/$1@$tagged" = "$2" ] || { echo "::error::GHCR tag $1:sha-$SOURCE_SHA points at $tagged, the staging manifest says ${2#*@}"; exit 1; }
+          done
+          docker logout ghcr.io >/dev/null
+          {
+            echo "api_image=$api"
+            echo "web_image=$web"
+          } >> "$GITHUB_OUTPUT"
+          { echo "### Images (the digests staging deployed)"; echo; echo "- API: \`$api\`"; echo "- Web: \`$web\`"; echo; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Point Dokploy at the new digests and deploy
+        id: dokploy
+        if: steps.fresh.outputs.proceed == 'true'
+        env:
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_TOKEN: ${{ secrets.DOKPLOY_TOKEN }}
+          DOKPLOY_COMPOSE_ID: ${{ secrets.DOKPLOY_COMPOSE_ID }}
+          API_IMAGE: ${{ steps.images.outputs.api_image }}
+          WEB_IMAGE: ${{ steps.images.outputs.web_image }}
+          GIT_SHA: ${{ needs.gate.outputs.source_sha }}
+          DEPLOY_TITLE: POII production ${{ needs.gate.outputs.source_sha }} run ${{ github.run_id }}.${{ github.run_attempt }}
+          DEPLOY_TIMEOUT_SECONDS: '1200'
+          DOKPLOY_DRY_RUN: ${{ env.DRY_RUN }}
+          # The Compose service must already be the production one: a compose id of another environment stops here.
+          EXPECT_WEB_BASE_URL: ${{ vars.PRODUCTION_WEB_BASE_URL }}
+        run: node infra/scripts/dokploy-deploy.mjs
+
+      - name: Wait for the new SHA on /health/ready
+        id: ready
+        if: steps.fresh.outputs.proceed == 'true' && env.DRY_RUN != 'true'
+        env:
+          POII_WEB_BASE_URL: ${{ vars.PRODUCTION_WEB_BASE_URL }}
+          POII_API_BASE_URL: ${{ vars.PRODUCTION_API_BASE_URL }}
+          POII_EXPECTED_SHA: ${{ needs.gate.outputs.source_sha }}
+          POII_READY_TIMEOUT_SECONDS: '600'
+        run: bash infra/scripts/staging-smoke.sh wait
+
+      # The same script as on staging, pointed at production through its environment variables. Its
+      # output says "staging smoke"; the host it names is the production host.
+      - name: Production smoke
+        if: steps.fresh.outputs.proceed == 'true' && env.DRY_RUN != 'true'
+        env:
+          POII_WEB_BASE_URL: ${{ vars.PRODUCTION_WEB_BASE_URL }}
+          POII_API_BASE_URL: ${{ vars.PRODUCTION_API_BASE_URL }}
+          POII_EXPECTED_SHA: ${{ needs.gate.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          { echo "### Production smoke (\`infra/scripts/staging-smoke.sh check\` against the production host)"; echo; } >> "$GITHUB_STEP_SUMMARY"
+          bash infra/scripts/staging-smoke.sh check | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Write the release manifest
+        if: steps.fresh.outputs.proceed == 'true' && env.DRY_RUN != 'true'
+        id: manifest
+        env:
+          API_IMAGE: ${{ steps.images.outputs.api_image }}
+          WEB_IMAGE: ${{ steps.images.outputs.web_image }}
+          DEPLOYED_AT: ${{ steps.dokploy.outputs.deployed_at }}
+          OBSERVED: ${{ steps.ready.outputs.observed_ready_version }}
+          PREVIOUS_FROM_RUN: ${{ steps.previous.outputs.manifest_name }}
+          PROMOTED_FROM: ${{ needs.gate.outputs.staging_manifest }}
+        run: |
+          set -euo pipefail
+          stamp="$(date -u -d "$DEPLOYED_AT" +%Y%m%dT%H%M%SZ)"
+          name="production-$stamp-${SOURCE_SHA:0:12}.json"
+          # The previous production manifest: the one the previous successful run uploaded; if that run's
+          # artifact is gone, the newest one recorded on main; null on the first deploy.
+          previous="$PREVIOUS_FROM_RUN"
+          if [ -z "$previous" ]; then
+            previous="$(ls infra/releases/production-*.json 2>/dev/null | sort | tail -n 1 | xargs -r basename || true)"
+          fi
+          mkdir -p "$RUNNER_TEMP/manifest"
+          PREVIOUS="$previous" node -e '
+            const e = process.env;
+            const manifest = { sourceSha: e.SOURCE_SHA, api: e.API_IMAGE, web: e.WEB_IMAGE, environment: "production",
+              deployedAt: e.DEPLOYED_AT, observedReadyVersion: e.OBSERVED, previous: e.PREVIOUS || null,
+              promotedFrom: e.PROMOTED_FROM, promotionClass: e.PROMOTION_CLASS };
+            process.stdout.write(JSON.stringify(manifest, null, 2) + "\n");' > "$RUNNER_TEMP/manifest/$name"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Release manifest \`infra/releases/$name\`"
+            echo
+            echo '```json'
+            cat "$RUNNER_TEMP/manifest/$name"
+            echo '```'
+            echo
+            echo "Record it through a normal PR: add this file under \`infra/releases/\` (gated path) and the observation in \`LIVE-ENVIRONMENT-FACTS.md\`. This workflow never pushes to main."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        if: steps.fresh.outputs.proceed == 'true' && env.DRY_RUN != 'true'
+        with:
+          name: poii-production-manifest-${{ needs.gate.outputs.source_sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/manifest/${{ steps.manifest.outputs.name }}
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Explain the failure
+        if: failure()
+        env:
+          PREV_API: ${{ steps.dokploy.outputs.previous_api_image }}
+          PREV_WEB: ${{ steps.dokploy.outputs.previous_web_image }}
+          PREV_SHA: ${{ steps.dokploy.outputs.previous_git_sha }}
+          ENV_UPDATED: ${{ steps.dokploy.outputs.env_update_attempted }}
+          RUNBOOK: ${{ github.server_url }}/${{ github.repository }}/blob/main/docs/runbooks/rollback-and-restore.md
+        run: |
+          {
+            echo "### Production deploy of \`$SOURCE_SHA\` FAILED"
+            echo
+            echo "Nothing was rolled back automatically. Read the failed step above, then decide."
+            if [ "$ENV_UPDATED" = true ]; then
+              echo "This run changed the Dokploy environment, so production may already run the new images. Values before this run (one-step rollback target):"
+              echo "- \`API_IMAGE\`: \`${PREV_API:-(not set)}\`"
+              echo "- \`WEB_IMAGE\`: \`${PREV_WEB:-(not set)}\`"
+              echo "- \`GIT_SHA\`: \`${PREV_SHA:-(not set)}\`"
+              echo
+              echo "This run wrote no manifest. The next promotion is classified from the last deploy that passed every check."
+            else
+              echo "Dokploy was not changed by this run (the failure happened before the environment update)."
+            fi
+            echo
+            echo "Rollback procedure: [rollback and restore runbook]($RUNBOOK) §1. Never restore the database as part of an app rollback."
+          } >> "$GITHUB_STEP_SUMMARY"

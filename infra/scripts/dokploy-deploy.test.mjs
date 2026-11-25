@@ -171,6 +171,32 @@ describe('changedComposeFields', () => {
 });
 
 describe('dokploy-deploy.mjs against a mock Dokploy', () => {
+  test('EXPECT_WEB_BASE_URL: a service of another environment stops the run before any change, also in a dry run', async () => {
+    const dokploy = await startDokploy();
+    try {
+      for (const extra of [{}, { DOKPLOY_DRY_RUN: 'true' }]) {
+        const result = await runScript(dokploy.url, { EXPECT_WEB_BASE_URL: 'https://poii.example.test', ...extra });
+        assert.equal(result.code, 1);
+        assert.match(result.stderr, /does not have the WEB_BASE_URL expected for this environment/);
+        assert.doesNotMatch(`${result.stdout}${result.stderr}${result.summary}`, /poii-staging\.example\.test/);
+      }
+      assert.ok(!dokploy.state.calls.includes('compose.update') && !dokploy.state.calls.includes('compose.deploy'));
+      const malformed = await runScript(dokploy.url, { EXPECT_WEB_BASE_URL: 'https://poii.example.test/path' });
+      assert.equal(malformed.code, 1);
+    } finally {
+      await dokploy.close();
+    }
+  });
+  test('EXPECT_WEB_BASE_URL: the expected service deploys as usual', async () => {
+    const dokploy = await startDokploy();
+    try {
+      const result = await runScript(dokploy.url, { EXPECT_WEB_BASE_URL: 'https://poii-staging.example.test/' });
+      assert.equal(result.code, 0, result.stderr);
+      assert.equal(result.outputs.result, 'deployed');
+    } finally {
+      await dokploy.close();
+    }
+  });
   test('updates the environment, deploys and waits for done', async () => {
     const dokploy = await startDokploy();
     try {
