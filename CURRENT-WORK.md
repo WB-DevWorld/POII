@@ -2,6 +2,38 @@
 
 Newest entry first. Every entry says what was run and what was not. Mocked work is labelled mocked.
 
+## Staging live, first real AI call, the HTTP/3 stall — 2026-11-25 UTC
+
+This entry covers 2026-10-13 to 2026-11-25. Nothing was written here in that time; the observations went to `LIVE-ENVIRONMENT-FACTS.md` and the pull requests. `docs/release-one-status.md` (new with this entry) maps the acceptance criteria to the evidence and lists what is open.
+
+Merged to `main`, each a squash commit. The owner approved every gated one on its head commit and pressed Merge; #72 merged by auto-merge.
+
+- [#53](https://github.com/WB-DevWorld/POII/pull/53) `7dff763` (2026-10-13): the dev scripts build the shared contracts package before starting the apps.
+- [#74](https://github.com/WB-DevWorld/POII/pull/74) `a303333` (2026-11-24): dependency security updates that build together: Next.js 16.4.5, zod 4.6.7, NestJS 12.3.2 (which brings body-parser 2.4.0 and multer 2.5.0), Better Auth 1.7.14. Before it, no open pull request could pass `verify`: `main` failed the audit, and each single update failed either the audit or the build.
+- [#72](https://github.com/WB-DevWorld/POII/pull/72) `efe2e04`: Node base image 24.22.3 for the API. Auto-merged, so no CI and no publish run started for that commit.
+- [#75](https://github.com/WB-DevWorld/POII/pull/75) `1f2043f`: `main-ci-catchup.yml` starts CI on `main` when its head has no CI run; `ci.yml` accepts a manual dispatch; `publish.yml` follows such runs. **Not yet proven on a real auto-merge:** every merge since was pressed by the owner, which starts CI by push.
+- [#73](https://github.com/WB-DevWorld/POII/pull/73) `e4cfa47`: GitHub Actions versions.
+- [#76](https://github.com/WB-DevWorld/POII/pull/76) `656f2fa`: the staging smoke accepts the sign-in redirect of an instance that requires sign-in. The first workflow deploy had failed on exactly that.
+- [#59](https://github.com/WB-DevWorld/POII/pull/59) `651c1eb`: record of the first staging deploy.
+- [#77](https://github.com/WB-DevWorld/POII/pull/77) `d5555cd` (2026-11-25): time limits on the web app's calls to the API (15 s, 930 s for long operations), on the proxy's sign-in check (5 s) and on the database pool (10 s for a connection); every call sends its own request id; a call that runs out shows `api_timeout` with that id.
+- [#78](https://github.com/WB-DevWorld/POII/pull/78) `460ff8f` and [#79](https://github.com/WB-DevWorld/POII/pull/79) `3f3e68f`: records of the first signed-in session, the first real AI call, the HTTP/3 finding and three release manifests.
+
+Closed without merging on 2026-11-24, by the bot with a comment each, on the owner's instruction that day to close what was no longer needed: #57, #60, #61, #63, #66, #67, #70 and #71. Their content was superseded by #74 or no longer needed; #60 (an optional Anthropic workspace header) became unnecessary when the owner replaced the key with one that belongs to a workspace.
+
+What is true now, with the place where it is recorded:
+
+- Staging runs at `https://poii-staging.cetechbpa.com` since 2026-11-24 and every merge to `main` deploys to it. It serves `3f3e68f` since 2026-11-25 15:39 UTC; that deploy's manifest is not in the repository yet (`LIVE-ENVIRONMENT-FACTS.md`, 2026-11-24 and 2026-11-25).
+- The owner signed in on staging and ran the first steps of the manual journey there. The first real provider call from a POII instance succeeded: Anthropic `claude-opus-5-5`, 5 candidates, USD 0.0624, equal to the list price for the reported tokens (`docs/compatibility-matrix.md`).
+- Two pages kept loading in that session. The cause was the HTTP/3 offer of the server's Traefik, not POII; the owner switched it off on the server and the pages load (`LIVE-ENVIRONMENT-FACTS.md`, 2026-11-25). The time limits of #77 were built while the cause was still unknown. They did not cure it and are kept, because a stuck call inside POII now ends in an error.
+
+What was run: on the head of #77, web 47 tests, API 169 tests against a migrated throwaway database, the web build, and by hand the built web app against a server that never answers (the page answers after 20 s with the notice). On #76 and the smoke change, the script tests and the script against live staging. CI green on every merged head. On 2026-10-26 the first AI calls were rehearsed from a throwaway local instance: both providers refused before generating anything (Anthropic: the key needed a workspace; OpenAI: no credit), spend USD 0, and POII's refusal, reservation release and ledger handled both correctly.
+
+Not run: any call to OpenAI that produced output; a backup or a restore drill on staging (no backup target yet); the Playwright journey against staging; a rollback; a sign-in through the real AccessLobby; a live Claude Code session firing the hook. MOCKED and labelled so, as before: the provider responses in `apps/api/test/ai.api.test.ts`, every AccessLobby interaction, the hook's stub API suite.
+
+Corrections to earlier text: `docs/runbooks/staging-deploy.md` still says "written, never run", which #80 (open when this was written) corrects; `docs/release-policy.md` still says staging deploys are "M2, not yet active", which stopped being true on 2026-11-24 (that file is in a gated class and is corrected with the next change to it).
+
+Owner questions still open: the three of 2026-10-12 below (never-send record titles for AI clients, a separate MindMesh cap, the reach of back-channel logout), and one new: whether an automated browser may get a credential for staging, so the Playwright journey can run there after each deploy.
+
 ## M3 merged, gate and tooling fixes — 2026-10-12 UTC
 
 Owner approvals: the phrases of 2026-10-10 ("POII GATED APPROVED: a PR that updates BUILD-BASELINE.md …", "… makes compose.dokploy.yaml pass the sign-in variables …", the instruction to fix the CodeQL alerts in their own gated PR) and the chat words "done" (2026-10-10), "permission granted", "approvals going" and "all approved" (2026-10-12), each with the owner's approving review on GitHub on the exact head that merged. Merged by the bot in this order (squash commits on `main`):
