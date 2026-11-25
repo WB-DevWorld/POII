@@ -29,7 +29,7 @@
 // Output hygiene: prints SHAs, run ids, pull request numbers and the two risk label names only. Pull
 // request titles, authors, other labels and response bodies are never printed.
 
-import { appendFileSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { appendFileSync, closeSync, fstatSync, openSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -345,10 +345,24 @@ export function readManifest(dir, { environment, sourceSha }) {
   const match = MANIFEST_FILE.exec(name);
   if (!match || match[1] !== environment || match[3] !== sourceSha.slice(0, 12)) fail(`The ${environment} manifest file name does not match ${environment}-<UTC time>-${sourceSha.slice(0, 12)}.json`);
   const file = join(dir, name);
-  if (!statSync(file).isFile() || statSync(file).size > MAX_MANIFEST_BYTES) fail(`The ${environment} manifest is not a small regular file`);
+  // Opened once: the checks and the read look at the same file, whatever happens to the path meanwhile.
+  let text;
+  let fd;
+  try {
+    fd = openSync(file, 'r');
+  } catch {
+    fail(`The ${environment} manifest cannot be opened`);
+  }
+  try {
+    const info = fstatSync(fd);
+    if (!info.isFile() || info.size > MAX_MANIFEST_BYTES) fail(`The ${environment} manifest is not a small regular file`);
+    text = readFileSync(fd, 'utf8');
+  } finally {
+    closeSync(fd);
+  }
   let manifest;
   try {
-    manifest = JSON.parse(readFileSync(file, 'utf8'));
+    manifest = JSON.parse(text);
   } catch {
     fail(`The ${environment} manifest is not JSON`);
   }
