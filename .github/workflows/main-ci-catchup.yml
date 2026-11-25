@@ -5,11 +5,14 @@ name: Main CI catch-up
 # has no CI run; "Publish immutable images" then follows that run as it follows a push run.
 # It reads pull request and run metadata only. It never checks out or runs code from a pull request.
 on:
-  # A pull request's CI finishing is the moment an auto-merge can land.
+  # An auto-merge lands when the last required check finishes. That is usually CI, but it is the risk
+  # classification when that one finishes last, for example after a re-run (#81 on 2026-11-25: `classify`
+  # was re-run after a GitHub outage, the merge landed eleven minutes after CI, and nothing started CI on
+  # `main` until this workflow was dispatched by hand).
   workflow_run:
-    workflows: [CI]
+    workflows: [CI, Risk classification]
     types: [completed]
-  # Backstop for merges the trigger above missed (another check finished last, an API hiccup).
+  # Backstop for merges the triggers above missed (an API hiccup, a check outside these two finishing last).
   schedule:
     - cron: '17 */6 * * *'
   workflow_dispatch:
@@ -46,7 +49,13 @@ jobs:
           echo "## Main CI catch-up" >> "$GITHUB_STEP_SUMMARY"
 
           if [ "$EVENT" = workflow_run ]; then
-            [[ "${PR_NUMBER:-}" =~ ^[0-9]+$ ]] || { note "The finished CI run names no pull request of this repository. The scheduled run covers it."; exit 0; }
+            # GitHub leaves the run's pull request list empty once the pull request is merged or closed, which an
+            # auto-merge can be by the time this runs. Then only the head of main is looked at, below: that
+            # check starts CI solely for a head commit that has none and is at least a minute old.
+            if ! [[ "${PR_NUMBER:-}" =~ ^[0-9]+$ ]]; then
+              note "The finished run names no pull request. Looking at the head of main only."
+              state=unknown
+            else
             # Auto-merge lands seconds after the last required check. Wait for it, at most three minutes.
             state=waiting
             for _ in $(seq 1 12); do
@@ -64,6 +73,7 @@ jobs:
               waiting) note "PR #$PR_NUMBER has auto-merge on but has not merged yet. The scheduled run covers it."; exit 0 ;;
               *) note "PR #$PR_NUMBER is not auto-merging ($state). Nothing to do."; exit 0 ;;
             esac
+            fi
           fi
 
           # Prints how many CI runs exist for a main commit. A failed or odd answer stops the job: it must
