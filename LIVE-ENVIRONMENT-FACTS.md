@@ -108,6 +108,14 @@ Staging serves `4c6e7964f86ab07be721fa9d0cd3ad4f3d745a08` since 17:11 UTC. Each 
 - The same CI workflow dispatched by the bot app at 16:40 UTC was followed by the publish and the deploy in the table above; staging served `d0edd19` at 16:47 UTC.
 - GitHub reported a partial outage from about 15:54 to 16:35 UTC. During it, checks failed on GitHub's own errors (the labels call of `classify`, the upload of a CodeQL result) and re-runs were refused for a while.
 
+### Night of 2026-11-25: the second auto-merge, and the build staging serves
+
+- #87 (dependency advisories) merged by auto-merge at 20:48:21 UTC as `4fb311f9407b7f14425c4ad55316b50b9b5562b1`. [Catch-up run 45698383888](https://github.com/WB-DevWorld/POII/actions/runs/45698383888) was already waiting for that merge, saw it, and started CI on `main` at 20:49 UTC ([CI run 45698593245](https://github.com/WB-DevWorld/POII/actions/runs/45698593245), passed). So the catch-up does start CI within about a minute of an auto-merge, which #81 had not shown. No images followed that run, as expected: the change that walks the rest of the path (#86) was not on `main` yet.
+- The owner merged #86 at 20:54 UTC (`5b5d87f`) and #88 at 20:55 UTC (`a56f6841c871d8812a044289e74019eac7fbcd1b`).
+- Staging serves `a56f6841c871d8812a044289e74019eac7fbcd1b` since 21:04 UTC: [Deploy staging run 45700853774](https://github.com/WB-DevWorld/POII/actions/runs/45700853774) after [publish run 45700556335](https://github.com/WB-DevWorld/POII/actions/runs/45700556335). API `ghcr.io/wb-devworld/poii-api@sha256:a2284f23aa0f6adf364da4191eef9e169897d3c964b9d03ca1ee384cb26736f1`; web `ghcr.io/wb-devworld/poii-web@sha256:ebf0b8fbfb931007cdfe133bb053d3fe4b7dd07ee6b94043c2c9bf28bb880666`. Its manifest `staging-20261125T210447Z-a56f6841c871.json` is not under `infra/releases/` yet. [Deploy staging run 45700232135](https://github.com/WB-DevWorld/POII/actions/runs/45700232135) before it stopped in its `gate` job, as designed (two merges a minute apart).
+- The new catch-up script ran on GitHub for the first time in [run 45699476435](https://github.com/WB-DevWorld/POII/actions/runs/45699476435): checked out from `main`, and ended with "PR #88 is not auto-merging", which was correct. Its chain (CI, publish, deploy after an auto-merge) has not run for real yet.
+- `pnpm audit` on `main` reports no known vulnerabilities since `4fb311f`.
+
 ## 2026-11-24
 
 ### First staging deployment
