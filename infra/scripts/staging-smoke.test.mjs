@@ -17,11 +17,13 @@ const OLD_SHA = 'c'.repeat(40);
 /**
  * Mock staging host. `version` is the SHA the API reports; `rootStatus` the web root's status code.
  * `signIn` makes it behave like an instance that requires sign-in: every signed-out page request is
- * redirected (307) to `signInTarget`, and `/signin` answers `signInStatus`.
+ * redirected (307) to `signInTarget`, and `/signin` answers `signInStatus`. `altSvc` is sent as the
+ * `Alt-Svc` header of every response, as a reverse proxy would add it.
  */
-async function startStaging({ version = SHA, rootStatus = 200, signIn = false, signInStatus = 200, signInTarget = '/signin' } = {}) {
+async function startStaging({ version = SHA, rootStatus = 200, signIn = false, signInStatus = 200, signInTarget = '/signin', altSvc = null } = {}) {
   const state = { version, rootStatus };
   const server = http.createServer((req, res) => {
+    if (altSvc) res.setHeader('alt-svc', altSvc);
     const json = (code, body) => {
       res.writeHead(code, { 'content-type': 'application/json' });
       res.end(JSON.stringify(body));
@@ -83,6 +85,7 @@ describe('staging-smoke.sh check', () => {
       assert.match(result.stdout, /PASS {2}GET \/health\/ready -> 200, status ready/);
       assert.match(result.stdout, /PASS {2}GET web root -> 200/);
       assert.match(result.stdout, /PASS {2}GET unknown route -> 404/);
+      assert.match(result.stdout, /PASS {2}no HTTP\/3 offer/);
       assert.match(result.stdout, /SKIP {2}core-journey Playwright smoke: no authentication method is approved for staging yet/);
     } finally {
       await staging.close();
@@ -137,6 +140,39 @@ describe('staging-smoke.sh check', () => {
       } finally {
         await staging.close();
       }
+    }
+  });
+
+  test('fails when the host offers HTTP/3, on a plain and on a sign-in instance', async () => {
+    for (const signIn of [false, true]) {
+      const staging = await startStaging({ signIn, altSvc: 'h3=":443"; ma=2592000' });
+      try {
+        const result = await runSmoke('check', { POII_WEB_BASE_URL: staging.url });
+        assert.equal(result.code, 1, result.stdout + result.stderr);
+        assert.match(result.stdout, /FAIL {2}the web host offers HTTP\/3 \(Alt-Svc names h3\)/);
+        assert.match(result.stderr, /1 staging smoke check\(s\) failed/);
+      } finally {
+        await staging.close();
+      }
+    }
+  });
+
+  test('an Alt-Svc header that does not name h3 passes, and POII_ALLOW_HTTP3=true skips the check', async () => {
+    const cleared = await startStaging({ altSvc: 'clear' });
+    try {
+      const result = await runSmoke('check', { POII_WEB_BASE_URL: cleared.url });
+      assert.equal(result.code, 0, result.stdout + result.stderr);
+      assert.match(result.stdout, /PASS {2}no HTTP\/3 offer/);
+    } finally {
+      await cleared.close();
+    }
+    const offering = await startStaging({ altSvc: 'h3=":443"; ma=86400' });
+    try {
+      const result = await runSmoke('check', { POII_WEB_BASE_URL: offering.url, POII_ALLOW_HTTP3: 'true' });
+      assert.equal(result.code, 0, result.stdout + result.stderr);
+      assert.match(result.stdout, /SKIP {2}HTTP\/3 offer: not checked/);
+    } finally {
+      await offering.close();
     }
   });
 

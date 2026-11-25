@@ -2,11 +2,15 @@
 # Staging checks for the deploy workflow (docs/runbooks/staging-deploy.md).
 #
 #   staging-smoke.sh wait    poll the API's /health/ready until it reports the expected SHA (hard timeout)
-#   staging-smoke.sh check   health live and ready, version, web root, unknown route, core-journey hook
+#   staging-smoke.sh check   health live and ready, version, web root, unknown route, no HTTP/3 offer,
+#                             core-journey hook
 #                             Web root: 200, or a redirect to this host's /signin whose page answers 200.
 #                             Unknown route: 404, or a redirect to this host's /signin. An instance that
 #                             requires sign-in redirects every signed-out request there, so it reveals
 #                             no route.
+#                             No HTTP/3 offer: no Alt-Svc response header that names h3. Dokploy's Traefik
+#                             offers HTTP/3 by default; on staging that stalled signed-in browser sessions
+#                             (LIVE-ENVIRONMENT-FACTS.md, 2026-11-25).
 #
 # Environment:
 #   POII_WEB_BASE_URL            required, e.g. https://poii-staging.example.org
@@ -15,6 +19,7 @@
 #   POII_EXPECTED_SHA            required; the source SHA the deployment must report
 #   POII_READY_TIMEOUT_SECONDS   optional, default 600 (wait only)
 #   POII_READY_INTERVAL_SECONDS  optional, default 10 (wait only)
+#   POII_ALLOW_HTTP3             optional; `true` skips the HTTP/3 check, for a host where HTTP/3 is proven to work
 #   POII_STAGING_E2E_AUTH        optional; name of an approved staging sign-in method for the Playwright smoke.
 #                                 None exists yet, so leave it unset and the smoke is skipped with a reason.
 # Needs bash, curl and node (for JSON parsing). Prints status and version, never response bodies.
@@ -38,11 +43,12 @@ trap 'rm -rf "$work"' EXIT
 failures=0
 
 # fetch URL -> sets $code and $redirect (absolute target of a redirect, else empty) and writes the body
-# to $work/body. Redirects are reported, never followed.
+# to $work/body and the response headers to $work/headers. Redirects are reported, never followed.
 fetch() {
   local out
   : > "$work/body"
-  out="$(curl -sS -o "$work/body" -w '%{http_code} %{redirect_url}' --max-time 15 -H 'accept: application/json' "$1" 2>/dev/null)" || out="000 "
+  : > "$work/headers"
+  out="$(curl -sS -o "$work/body" -D "$work/headers" -w '%{http_code} %{redirect_url}' --max-time 15 -H 'accept: application/json' "$1" 2>/dev/null)" || out="000 "
   code="${out%% *}"
   redirect="${out#* }"
 }
@@ -97,11 +103,28 @@ check_unknown_route() {
   else fail "GET unknown route -> HTTP $code (want 404, or a redirect to /signin on this host)"; fi
 }
 
+# The web host must not offer HTTP/3. An Alt-Svc header naming h3 moves browsers to UDP 443 for up to the
+# header's max-age; where that path does not work, pages stall for a minute at a time while every check
+# over TCP stays green.
+check_no_http3() {
+  if [ "${POII_ALLOW_HTTP3:-}" = true ]; then
+    echo "SKIP  HTTP/3 offer: not checked, POII_ALLOW_HTTP3 is true"
+    return 0
+  fi
+  fetch "$web_base/"
+  if [ "$code" = 000 ]; then fail "HTTP/3 offer: the web root did not answer, so its headers could not be read"; return; fi
+  if grep -i '^alt-svc:' "$work/headers" | grep -qi 'h3'; then
+    fail "the web host offers HTTP/3 (Alt-Svc names h3). Switch it off in Traefik (docs/runbooks/staging-deploy.md, HTTP/3 off in Traefik), or set POII_ALLOW_HTTP3=true once HTTP/3 is proven to work"
+  else
+    pass "no HTTP/3 offer (no Alt-Svc header naming h3)"
+  fi
+}
+
 run_core_journey_smoke() {
   if [ -z "${POII_STAGING_E2E_AUTH:-}" ]; then
     echo "SKIP  core-journey Playwright smoke: no authentication method is approved for staging yet."
-    echo "      local-owner is loopback-only unless POII_ALLOW_LOCAL_OWNER_REMOTE is set deliberately,"
-    echo "      and local sign-in is still being built (#14). Set POII_STAGING_E2E_AUTH once one is approved."
+    echo "      Staging requires sign-in, and no credential for an automated browser is approved."
+    echo "      Set POII_STAGING_E2E_AUTH once one is approved."
     return 0
   fi
   # Hook: the Playwright config (apps/web/playwright.config.ts) starts local servers and cannot target staging yet.
@@ -138,6 +161,7 @@ case "$mode" in
     check_health /health/ready ready
     check_web_root
     check_unknown_route
+    check_no_http3
     run_core_journey_smoke
     if [ "$failures" -gt 0 ]; then die "$failures staging smoke check(s) failed"; fi
     echo "All staging smoke checks passed"

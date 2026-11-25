@@ -208,6 +208,7 @@ jobs:
           POII_API_BASE_URL: ${{ vars.STAGING_API_BASE_URL }}
           POII_EXPECTED_SHA: ${{ needs.gate.outputs.source_sha }}
           POII_STAGING_E2E_AUTH: ${{ vars.POII_STAGING_E2E_AUTH }}
+          POII_ALLOW_HTTP3: ${{ vars.POII_STAGING_ALLOW_HTTP3 }}
         run: bash infra/scripts/staging-smoke.sh check | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Write the release manifest
