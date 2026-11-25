@@ -113,8 +113,24 @@ Staging serves `4c6e7964f86ab07be721fa9d0cd3ad4f3d745a08` since 17:11 UTC. Each 
 - #87 (dependency advisories) merged by auto-merge at 20:48:21 UTC as `4fb311f9407b7f14425c4ad55316b50b9b5562b1`. [Catch-up run 45698383888](https://github.com/WB-DevWorld/POII/actions/runs/45698383888) was already waiting for that merge, saw it, and started CI on `main` at 20:49 UTC ([CI run 45698593245](https://github.com/WB-DevWorld/POII/actions/runs/45698593245), passed). So the catch-up does start CI within about a minute of an auto-merge, which #81 had not shown. No images followed that run, as expected: the change that walks the rest of the path (#86) was not on `main` yet.
 - The owner merged #86 at 20:54 UTC (`5b5d87f`) and #88 at 20:55 UTC (`a56f6841c871d8812a044289e74019eac7fbcd1b`).
 - Staging serves `a56f6841c871d8812a044289e74019eac7fbcd1b` since 21:04 UTC: [Deploy staging run 45700853774](https://github.com/WB-DevWorld/POII/actions/runs/45700853774) after [publish run 45700556335](https://github.com/WB-DevWorld/POII/actions/runs/45700556335). API `ghcr.io/wb-devworld/poii-api@sha256:a2284f23aa0f6adf364da4191eef9e169897d3c964b9d03ca1ee384cb26736f1`; web `ghcr.io/wb-devworld/poii-web@sha256:ebf0b8fbfb931007cdfe133bb053d3fe4b7dd07ee6b94043c2c9bf28bb880666`. Its manifest `staging-20261125T210447Z-a56f6841c871.json` is not under `infra/releases/` yet. [Deploy staging run 45700232135](https://github.com/WB-DevWorld/POII/actions/runs/45700232135) before it stopped in its `gate` job, as designed (two merges a minute apart).
-- The new catch-up script ran on GitHub for the first time in [run 45699476435](https://github.com/WB-DevWorld/POII/actions/runs/45699476435): checked out from `main`, and ended with "PR #88 is not auto-merging", which was correct. Its chain (CI, publish, deploy after an auto-merge) has not run for real yet.
+- The new catch-up script ran on GitHub for the first time in [run 45699476435](https://github.com/WB-DevWorld/POII/actions/runs/45699476435): checked out from `main`, and ended with "PR #88 is not auto-merging", which was correct. Its chain (CI, publish, deploy after an auto-merge) had not run for real at that point; it did at 21:11 UTC, see the next subsection.
 - `pnpm audit` on `main` reports no known vulnerabilities since `4fb311f`.
+
+### The first automatic chain after an auto-merge
+
+#89, a routine documentation change, merged by auto-merge at 21:11:47 UTC on 2026-11-25 as `28c57955e1106b5a68c29677c8cf16ea104fa114`. Nobody started anything after that.
+
+| Step | Run | Started (UTC) | Result |
+| --- | --- | --- | --- |
+| Catch-up sees the merge and finds no CI run for the head of `main` | [45702017969](https://github.com/WB-DevWorld/POII/actions/runs/45702017969) | 21:11:29, waiting for the merge | "PR #89 was merged by auto-merge." |
+| CI on `main` | [45702233455](https://github.com/WB-DevWorld/POII/actions/runs/45702233455) | 21:12:48 | success |
+| Publish immutable images | [45702960733](https://github.com/WB-DevWorld/POII/actions/runs/45702960733) | 21:17:25 | success |
+| Deploy staging | [45703310651](https://github.com/WB-DevWorld/POII/actions/runs/45703310651) | 21:19:41 | success, smoke passed |
+
+- Staging served `28c57955e1106b5a68c29677c8cf16ea104fa114` at 21:21 UTC (`deployedAt` 21:20:51), about nine minutes after the merge. API `ghcr.io/wb-devworld/poii-api@sha256:bd3d23bb46a7565480f431ab2ea0887b9901c71532b886029df10a0ee08a6679`; web `ghcr.io/wb-devworld/poii-web@sha256:e57430cf24f6289d29dacaa26b7edceea1d425be0a2f08cc30c3193fb86e1811`.
+- Each of the three runs was started by the catch-up with the workflow token (`workflow_dispatch`, actor `github-actions[bot]`). The catch-up ended with "Production deploys are switched off. The chain ends here."
+- This is what #81 and #87 had not shown: after an auto-merge the commit gets CI, images and a staging deploy by itself (#86).
+- The manifest `staging-20261125T212051Z-28c57955e110.json` is not under `infra/releases/` yet, nor is the one of `a56f684`. Its `previous` names the newest manifest recorded on `main` (`staging-20261125T171138Z-4c6e7964f86a.json`), because the staging deploy takes `previous` from the newest manifest in the repository, not from the run before it.
 
 ## 2026-11-24
 
