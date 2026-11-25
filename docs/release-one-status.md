@@ -49,7 +49,7 @@ The tests run with AI and peers switched off unless the row says otherwise. Test
 ### Not open
 
 - Local sign-in and owner tokens (#14): merged, in CI, and used on staging by the owner since 2026-11-24. The defect found on 2026-11-25 (the sign-in form stayed after a correct password until a reload) is fixed by #82, and a browser test of sign-in runs in CI.
-- Staging with continuous deployment (#15): every merge to `main` pressed by a person deploys to staging since 2026-11-24; six release manifests are recorded under `infra/releases/`.
+- Staging with continuous deployment (#15): every merge to `main` deploys to staging: those pressed by a person since 2026-11-24, those by auto-merge since #86; nine release manifests are recorded under `infra/releases/`, one per staging deploy so far.
 - The page hang seen on staging on 2026-11-25 was the HTTP/3 offer of the server's Traefik, not POII. The staging smoke fails if the offer comes back (#80).
 - Routine changes deploy by themselves: after an auto-merge the catch-up starts CI, the image publish and the staging deploy (#86). Proven on GitHub on 2026-11-25 with #89, about nine minutes from merge to staging (`LIVE-ENVIRONMENT-FACTS.md`, "The first automatic chain after an auto-merge").
 - The moderate dependency advisories of 2026-11-25 (hono, `@hono/node-server`, esbuild): cleared by #87, which merged by auto-merge on 2026-11-25; none was reachable in POII. `pnpm audit` reports no known vulnerabilities.

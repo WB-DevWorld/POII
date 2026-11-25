@@ -2,6 +2,29 @@
 
 Newest entry first. Every entry says what was run and what was not. Mocked work is labelled mocked.
 
+## Routine changes deploy by themselves; advisories cleared — 2026-11-25 UTC (night)
+
+Continues the entry below.
+
+Merged to `main`:
+
+- [#87](https://github.com/WB-DevWorld/POII/pull/87) `4fb311f`, by auto-merge at 20:48 UTC: `hono` 4.13.21 and `@hono/node-server` 2.1.11 by a lockfile update, and one scoped override that replaces the `esbuild` 0.18.20 below `drizzle-kit`'s unused `@esbuild-kit` loader with 0.25.12. `pnpm audit` reports no known vulnerabilities. None of the eight advisories was reachable in POII.
+- [#86](https://github.com/WB-DevWorld/POII/pull/86) `5b5d87f`, approved and merged by the owner at 20:54 UTC: after an auto-merge the catch-up walks the release path itself (CI, image publish, staging deploy, then the start of the production promotion). The logic is `infra/scripts/main-ci-catchup.sh` with 14 tests against a stand-in for `gh` (MOCKED). `publish.yml` gained a manual start that builds the head of `main` only when CI passed for exactly that commit.
+- [#88](https://github.com/WB-DevWorld/POII/pull/88) `a56f684`, approved and merged by the owner at 20:55 UTC: the record of the evening.
+- [#89](https://github.com/WB-DevWorld/POII/pull/89) `28c5795` and [#90](https://github.com/WB-DevWorld/POII/pull/90) `4ba24f4`, both routine documentation changes, by auto-merge at 21:11 and 21:27 UTC. #89 was opened as the real test of #86.
+
+What was observed, each recorded in `LIVE-ENVIRONMENT-FACTS.md` under 2026-11-25:
+
+- **The automatic chain works on GitHub.** After #89 merged by itself, the catch-up started CI, the publish and the staging deploy, and staging served the commit nine minutes after the merge with nobody starting anything. The same happened after #90. Before #86, an auto-merged commit got CI but no images (#81, #87).
+- The classifier labels a change to `pnpm-workspace.yaml` and `pnpm-lock.yaml` as routine: #87 merged without the owner. Whether dependency resolution should be a gated class is the owner's call.
+- The first CI run of #86 failed before any test, in "Initialize containers": the registry answered "Data limit exceeded" for the PostgreSQL service image. A re-run passed. Not a defect of the change.
+
+What was run: on #86, 121 script tests locally and the script's real behaviour on GitHub in the runs above. On #87, the audit before and after, lint, typecheck, build, and the whole test suite on a migrated throwaway database (contracts 7, API 180, web 48, MCP 11). CI green on every merged head.
+
+Not run: the catch-up's last step, the start of the production promotion, beyond "production deploys are switched off"; a chain that breaks in the middle on GitHub (the repair path is tested against the stand-in only).
+
+Still open from the entry below: the Drizzle snapshots, what a deletion leaves behind, the class of deploy records, the production setup. All nine staging deploys so far have their manifest under `infra/releases/`.
+
 ## Sign-in defect, acceptance tests, the production path written, two holes after an auto-merge — 2026-11-25 UTC (evening)
 
 Continues the entry below. `docs/release-one-status.md` is updated with it.
