@@ -9,7 +9,7 @@
 import 'reflect-metadata';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { BackupDocument, ContextPackResponse, RecordDetail, RestoreResponse, SearchResponse, SourceView } from '@poii/contracts';
@@ -23,10 +23,16 @@ const PRICE_LINE = 'We use **EUR 12.40** per Type-B widget for the Q3 budget and
 
 /** Every file under `dir`, as UTF-8 text. */
 function filesUnder(dir: string): Array<{ path: string; text: string }> {
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir).flatMap(name => {
-    const path = join(dir, name);
-    return statSync(path).isDirectory() ? filesUnder(path) : [{ path, text: readFileSync(path, 'utf8') }];
+  // One listing per directory, entries with their type: nothing is checked first and read later.
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  return entries.flatMap(entry => {
+    const path = join(dir, entry.name);
+    return entry.isDirectory() ? filesUnder(path) : [{ path, text: readFileSync(path, 'utf8') }];
   });
 }
 
