@@ -2,7 +2,13 @@ name: Main CI catch-up
 # Routine PRs are merged by GitHub auto-merge, which `classify` enables with the workflow token. GitHub
 # starts no workflow for a push made with that token, so such a merge left `main` without CI and without
 # published images (#53 `7dff763`, #72 `efe2e04`). This workflow starts CI on `main` when its head commit
-# has no CI run; "Publish immutable images" then follows that run as it follows a push run.
+# has no CI run.
+# KNOWN GAP, observed on 2026-11-25 (#81, `d0edd19`): the CI run this workflow starts is started with the
+# workflow token too, and GitHub raises no `workflow_run` event when such a run finishes. So "Publish
+# immutable images" does NOT follow it: the commit gets CI but no images and no deploy. The same CI
+# workflow dispatched by the bot app was followed by publish and deploy within seven minutes. Until this
+# workflow starts CI with an identity other than the workflow token, an auto-merged commit reaches
+# staging with the next merge pressed by a person, or when someone dispatches CI on `main` as the bot.
 # It reads pull request and run metadata only. It never checks out or runs code from a pull request.
 on:
   # An auto-merge lands when the last required check finishes. That is usually CI, but it is the risk
