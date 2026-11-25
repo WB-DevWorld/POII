@@ -2,6 +2,67 @@
 
 Observed deployments only, by digest, with the time of observation. CI success is recorded in `CURRENT-WORK.md`, not here. Nothing in this file is a secret: hostnames, addresses, digests, run ids, models, list prices and caps only. Keys, tokens, Dokploy ids and backup credentials never belong here.
 
+## 2026-11-25
+
+### What staging serves
+
+`https://poii-staging.cetechbpa.com` serves source `651c1eba6d2e96b1340db18bd59e5a7b16a1d2a8` (PR #59) since 2026-11-24 18:25 UTC. No production deployment exists.
+
+| Slot | Value |
+| --- | --- |
+| Staging deploy: date and time (UTC) | 2026-11-24 18:25:56 (`deployedAt` in the manifest) |
+| Staging deploy: `Deploy staging` run link and attempt | [run 45459328981](https://github.com/WB-DevWorld/POII/actions/runs/45459328981), attempt 1, started by [publish run 45458952082](https://github.com/WB-DevWorld/POII/actions/runs/45458952082) |
+| Staging deploy: source SHA and both digests actually deployed | `651c1eba6d2e96b1340db18bd59e5a7b16a1d2a8`; API `ghcr.io/wb-devworld/poii-api@sha256:b14452a84cb4c3c80cd0e5ff0b9ff933fc145e25479c8e84af7c2b3b5549f60b`; web `ghcr.io/wb-devworld/poii-web@sha256:9ad7c03e36445c294593fc2ea823d7aed1b951b0156fe582545ff23297d885ef` |
+| Staging deploy: `version` reported by `GET /health/ready` on the staging host | `651c1eba6d2e96b1340db18bd59e5a7b16a1d2a8`, `status: ready`, `aiEnabled: true` (the workflow's wait step; the bot again on 2026-11-25 at 13:15 UTC) |
+| Staging deploy: release manifest file name under `infra/releases/` | `staging-20261124T182556Z-651c1eba6d2e.json` (`previous`: `staging-20261124T180747Z-656f2faaa551.json`) |
+| Staging deploy: `GET /health/version` → `migrations.applied` / `migrations.latest` | `0005_accesslobby_identity_link` / `0005_accesslobby_identity_link` (2026-11-25 13:15 UTC); `node` `v24.22.3`, `builtAt` `null` |
+| Backup: first scheduled run on staging (`GET /health/version` → `backup.lastRunAt`, `lastTarget`, `lastStatus`) | pending. `backup` is `null` on 2026-11-25 at 13:15 UTC; no backup target is configured yet |
+| Restore drill: date, source backup object key, duration, outcome (`docs/runbooks/backup-and-restore-drill.md` §6) | pending |
+| First real call, Anthropic `claude-opus-5-5`: date, `outcome`, candidates, input / output tokens, cost USD, `remainingUsd` after | 2026-11-25, see "First real AI call" below: 5 candidates, 1,494 input / 2,822 output tokens, USD 0.0624, USD 19.94 remaining of 20.00. The `outcome` field was not read by name |
+| First real call, OpenAI `gpt-6.1-sol`: date, `outcome`, candidates, input / output tokens, cost USD, `remainingUsd` after | pending. The owner reports that the OpenAI account still has no API credit |
+| Compatibility matrix rows completed (`docs/compatibility-matrix.md`, "Waiting for staging") | the web sign-in row and the Anthropic row moved to "Tested" today; the OpenAI row is still pending |
+
+### First signed-in session on staging
+
+The owner's own browser session on the staging host, 2026-11-25 at about 10:23 UTC, Chrome 157.0.8103.80 (64-bit), reported by the owner step by step. The source text was `fixtures/decision-chain.md`, copied from a rendered Markdown view (1,456 characters, so without the Markdown markers). The owner had already reported a working sign-in on 2026-11-24 at about 19:30 UTC.
+
+| Step | Result |
+| --- | --- |
+| Sign in as the owner on `/signin` | worked |
+| Add a source by pasting text | worked |
+| Mark a passage and create one candidate by hand | worked |
+| Confirm the candidate | worked |
+| Search for a word from the passage | worked: the hit was listed |
+| Open the evidence from the search hit (source page at the exact passage) | **kept loading and never finished** at about 10:23 UTC. Loaded on a retry later the same day |
+| Open Current decisions (`/decisions`) | **never loaded** at about 10:23 UTC. Loaded on a retry later the same day |
+
+Not exercised on staging in this session: superseding a record, the other views, export, backup and restore, owner tokens.
+
+### The two pages that kept loading
+
+- No deploy ran between the failing attempt and the retry; staging served `651c1eba6d2e96b1340db18bd59e5a7b16a1d2a8` throughout. The last `Deploy staging` run before the session ended on 2026-11-24 at 18:26 UTC.
+- The same journey on a local copy of `651c1eba6d2e96b1340db18bd59e5a7b16a1d2a8` with the same pasted text did not show it: the API alone answered every call in 20 to 170 ms; the web app under `next start` and under the standalone `server.js` rendered both pages in 40 to 60 ms; a Chromium browser clicked from the search hit to the evidence page and opened Current decisions in 120 to 270 ms with no console error.
+- The cause is not known. Nothing was read from the staging containers' logs for that minute.
+- What the reading of the code did show: the web app's calls to the API and the API's database pool had no time limit, so one stuck call shows as a page that loads for minutes and leaves no trace. PR #77 adds limits and a request id to follow (open when this was written).
+- `compose.dokploy.yaml` asks for Isolated Deployment to stay off in Dokploy, so the service names `api`, `web` and `db` are resolved on a network shared with other Compose services on that server. Whether that played a part is not known; it has not been examined.
+
+### First real AI call
+
+The first provider call from a POII instance: the owner on staging, 2026-11-25 shortly after 10:23 UTC, through "AI-assisted extraction" on the source above. Values as shown by the web interface (owner's screenshots); `GET /v1/ai/usage` was not called directly.
+
+| Item | Value |
+| --- | --- |
+| Provider and model | Anthropic, `claude-opus-5-5` |
+| Caps before | Anthropic: spent USD 0.00, reserved USD 0.00, remaining USD 20.00 of 20.00. OpenAI: the same |
+| Preview | characters 0 to 1,456 of the source; prompt 2,697 characters, SHA-256 `b2f89393b2882b3f97adbc7a0f1ddab2c65e080dff37961600c378b8de62e894`; estimate USD 0.1652 (about 1,300 input and at most 8,000 output tokens); preview valid until 10:44 UTC |
+| Result | 5 candidates: 2 decisions, 2 facts, 1 requirement. All `candidate` and `ai_extracted`; nothing confirmed |
+| Usage reported by the provider | 1,494 input and 2,822 output tokens |
+| Cost | USD 0.0624. At list price: 1,494 × 4 / 1,000,000 + 2,822 × 20 / 1,000,000 = USD 0.062416 |
+| Caps after | Anthropic: spent USD 0.0624, remaining USD 19.94 of 20.00 |
+| Reopening the used preview | answers `preview_used`; nothing is sent twice |
+
+Not observed: the execution's `outcome` field by name, and the audit event. The OpenAI provider was not tried.
+
 ## 2026-11-24
 
 ### First staging deployment
@@ -21,6 +82,8 @@ Staging runs. `https://poii-staging.cetechbpa.com` serves source `656f2faaa551c8
 | First real call, Anthropic `claude-opus-5-5`: date, `outcome`, candidates, input / output tokens, cost USD, `remainingUsd` after | pending |
 | First real call, OpenAI `gpt-6.1-sol`: date, `outcome`, candidates, input / output tokens, cost USD, `remainingUsd` after | pending |
 | Compatibility matrix rows completed (`docs/compatibility-matrix.md`, "Waiting for staging") | the staging HTTP API row is completed; the web sign-in row and both provider rows are still pending |
+
+The rows marked `pending` here are carried forward, filled or still `pending`, in the table under 2026-11-25 above.
 
 ### What was observed on the way there
 
