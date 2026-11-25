@@ -62,6 +62,10 @@ jobs:
         run: pnpm --filter @poii/api migrate
       - name: Migrate from the previous release, then to this change
         run: bash infra/scripts/migration-upgrade-check.sh
+      # Fresh poii_drill_* databases on the service PostgreSQL (created and dropped by the script): fixtures in,
+      # backup with the backup runner, restore into an empty install, counts and spans verified.
+      - name: Restore drill (backup runner, then restore into an empty install)
+        run: bash infra/scripts/restore-drill.sh
       - run: pnpm test
       - run: pnpm build
       - name: Install Chromium for the core-journey smoke

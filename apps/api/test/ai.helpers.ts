@@ -6,6 +6,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { LogLevel } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { LocalFsStorage } from '../src/adapters/local-fs.storage.js';
 import { LocalOwnerIdentity } from '../src/adapters/local-owner.identity.js';
@@ -65,6 +66,8 @@ export async function startAiApi(
   databaseUrl: string,
   buildAi: (settings: Settings, db: Db) => AiExecutionPort,
   extraEnv: Record<string, string> = {},
+  /** Nest's own logger: off like every other test app, or the levels main.ts uses when a test reads the process output. */
+  logger: false | LogLevel[] = false,
 ): Promise<TestApi> {
   const storageDir = mkdtempSync(join(tmpdir(), 'poii-test-ai-storage-'));
   const settings = aiSettings(databaseUrl, storageDir, extraEnv);
@@ -75,7 +78,7 @@ export async function startAiApi(
     ai: buildAi(settings, db),
   };
   const { module } = createApp(settings, db, ports);
-  const app = await NestFactory.create(module, { logger: false, bodyParser: false });
+  const app = await NestFactory.create(module, { logger, bodyParser: false });
   configureHttpApp(app, ports);
   await app.listen(0, '127.0.0.1');
   const base = (await app.getUrl()).replace('[::1]', '127.0.0.1');
