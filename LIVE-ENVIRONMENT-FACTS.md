@@ -42,7 +42,7 @@ Not exercised on staging in this session: superseding a record, the other views,
 
 - No deploy ran between the failing attempt and the retry; staging served `651c1eba6d2e96b1340db18bd59e5a7b16a1d2a8` throughout. The last `Deploy staging` run before the session ended on 2026-11-24 at 18:26 UTC.
 - The same journey on a local copy of `651c1eba6d2e96b1340db18bd59e5a7b16a1d2a8` with the same pasted text did not show it: the API alone answered every call in 20 to 170 ms; the web app under `next start` and under the standalone `server.js` rendered both pages in 40 to 60 ms; a Chromium browser clicked from the search hit to the evidence page and opened Current decisions in 120 to 270 ms with no console error.
-- The cause is not known. Nothing was read from the staging containers' logs for that minute.
+- The cause was not known when this was written. It was found later the same day: see "The cause of the pages that kept loading: HTTP/3" below. Nothing was read from the staging containers' logs.
 - What the reading of the code did show: the web app's calls to the API and the API's database pool had no time limit, so one stuck call shows as a page that loads for minutes and leaves no trace. PR #77 adds limits and a request id to follow (open when this was written).
 - `compose.dokploy.yaml` asks for Isolated Deployment to stay off in Dokploy, so the service names `api`, `web` and `db` are resolved on a network shared with other Compose services on that server. Whether that played a part is not known; it has not been examined.
 
@@ -62,6 +62,27 @@ The first provider call from a POII instance: the owner on staging, 2026-11-25 s
 | Reopening the used preview | answers `preview_used`; nothing is sent twice |
 
 Not observed: the execution's `outcome` field by name, and the audit event. The OpenAI provider was not tried.
+
+### Later on 2026-11-25: a new build on staging
+
+- PR #77 (time limits) merged as `d5555cdbdf71847ffe9b7def508f7c8c41f5ab99` at 13:22:54 UTC and PR #78 (this record) as `460ff8f00378d4e283384234ba87687a84b4b722` at 13:23:14 UTC.
+- Staging serves `460ff8f00378d4e283384234ba87687a84b4b722` since 13:32:11 UTC: [Deploy staging run 45624443704](https://github.com/WB-DevWorld/POII/actions/runs/45624443704), attempt 1, started by [publish run 45624100048](https://github.com/WB-DevWorld/POII/actions/runs/45624100048). API `ghcr.io/wb-devworld/poii-api@sha256:79171a45ff44bf1351adf5d875358b6d38fc3fb50c5f034c5cc3711060c3b0d9`; web `ghcr.io/wb-devworld/poii-web@sha256:f07cef039f5ecf45978ce768154a7cee9b45653be351ba59f0b5e58cb9a32b13`. Manifest `staging-20261125T133211Z-460ff8f00378.json` (`previous`: `staging-20261124T182556Z-651c1eba6d2e.json`). `GET /health/ready` reported that SHA with `status: ready` at 13:32 and again at 15:19 UTC.
+- No images were deployed for `d5555cd` alone. [Deploy staging run 45623915197](https://github.com/WB-DevWorld/POII/actions/runs/45623915197) stopped in its `gate` job, as designed: the two merges landed 20 seconds apart, so the publish run started for the first commit was reported for the second, and the gate refuses that mismatch ("main moved on between CI and publish"). The next chain deployed normally.
+
+### The cause of the pages that kept loading: HTTP/3
+
+Found on 2026-11-25 between 13:36 and 15:30 UTC. It was not POII.
+
+- On the new build the owner saw the same hang again. With the time limits in place a stuck call inside POII would have ended in an `api_timeout` notice after 20 seconds, so the request was not stuck there.
+- Watched in the owner's own Chrome, in the signed-in staging session, with the owner's agreement: that browser loaded staging over HTTP/3 (`nextHopProtocol` `h3`). Search and the source page loaded in 0.25 to 0.5 s. Opening a record from a search hit never left the search page, and from that moment every request from that browser to the staging host got no answer for more than a minute, including `/icon.svg`, `/health/ready` and `/signin`. After about 75 seconds the connection recovered by itself. A second run stalled the same way; in two of three tries the stall began on the record page (46 KB of HTML, plus a 112 KB script file).
+- In the same minute, from the same machine but outside the browser, over TCP: `/signin` 200, `/decisions` 307 and `/health/ready` 200 in 0.5 to 0.7 s. The server was answering; the browser's HTTP/3 connection was dead.
+- That explains the sequence of the first session: the page opened from the search hit stalls, Current decisions "never loads" because the whole connection is dead, and a later retry works.
+- Why HTTP/3 was in use: Dokploy's Traefik enables HTTP/3 on its HTTPS entry point by default, so every response carried `Alt-Svc: h3=":443"; ma=2592000`.
+- Why HTTP/3 stalled is not established. From other programs on that machine a QUIC connection to UDP 443 of the server never completed (idle timeout), with or without the stall, so the browser's HTTP/3 probably did not reach the server directly; HTTPS-scanning security software on that machine may sit in between. This was not examined further.
+- **Change on the server, by the owner, at about 15:15 UTC:** the `http3` block was removed from the HTTPS entry point in Traefik's `traefik.yml` and Traefik was reloaded. This is a setting of the Dokploy server, not of this repository, and it applies to every application behind that Traefik.
+- Observed afterwards: from 15:19 UTC responses carry no `Alt-Svc` header. In the owner's Chrome the page and every live request use `h2`; 18 requests in a row (12 for the large record pages, 6 for Current decisions) answered in 200 to 430 ms with no stall; 14 pages (home, sources, records, Current decisions, search, export, backup, tokens, account, import, add a source, the source page with and without the cited span, AI-assisted extraction) each loaded completely in 215 to 464 ms.
+- One leftover in that browser: a script file of the record page stayed pending when requested through the browser's cache, held by a request left over from a stall, while the same file fetched past the cache came back in 0.2 s. Fetching it once with the cache bypassed cleared it. Restarting the browser clears any other such leftover.
+- The two earlier guesses are settled as follows. The missing time limits were real and are fixed by PR #77, but they were not the cause. The shared Dokploy network (Isolated Deployment off) is not needed to explain anything seen; it has still not been examined.
 
 ## 2026-11-24
 
