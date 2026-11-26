@@ -63,60 +63,76 @@ export function inputFromIso(iso: string | null | undefined): string {
 /** How a competing value without a date is written and shown: "no date catalogue page". */
 export const NO_DATE = 'no date';
 const UNDATED_LINE = /^(?:no date|undated)\b\s*(?:[-–—:|]\s*)?(.*)$/i;
+const DATED_LINE = /^(\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?)?)\s*(?:[-–—:|]\s*)?(.*)$/;
+/** "[2]" at the end of a line: the second of the sources listed under the box. */
+const SOURCE_REF = /\s*\[(\d{1,3})\]$/;
+
+/** A source a competing value can be said to come from. The title is null when the record does not cite it. */
+export type ConflictSource = { id: string; title: string | null };
+
+/**
+ * The sources a form offers for competing values, in the order their numbers are shown: the sources the record
+ * cites, then any other source a stored value already names (so that it stays visible and can be removed).
+ */
+export function conflictSourceList(cited: ConflictSource[], conflicts: TimeConflictValue[] | null | undefined): ConflictSource[] {
+  const list: ConflictSource[] = [];
+  for (const source of cited) if (!list.some(s => s.id === source.id)) list.push(source);
+  for (const c of conflicts ?? []) if (c.sourceId && !list.some(s => s.id === c.sourceId)) list.push({ id: c.sourceId, title: null });
+  return list;
+}
+
+export type ConflictLines = {
+  conflicts: TimeConflictValue[];
+  /** Lines that are neither a date nor "no date". */
+  invalid: string[];
+  /** Lines whose `[n]` is not one of the offered sources. */
+  unknownSource: string[];
+};
 
 /**
  * Parses "one value per line": `2026-03-04 16:02 note…`, `2026-03-04 note…`, or `no date note…` (also
- * `undated note…`) for a competing value whose source carries no date. Bad lines are reported.
+ * `undated note…`) for a competing value whose source carries no date. When `sourceIds` are offered, a line may
+ * end with `[n]` to name the n-th of them as the source of that value. Bad lines are reported.
  */
-export function parseConflictLines(text: string | null | undefined): { conflicts: TimeConflictValue[]; invalid: string[] } {
+export function parseConflictLines(text: string | null | undefined, sourceIds: readonly string[] = []): ConflictLines {
   const conflicts: TimeConflictValue[] = [];
   const invalid: string[] = [];
+  const unknownSource: string[] = [];
   for (const raw of (text ?? '').split(/\r?\n/)) {
     const line = raw.trim();
     if (!line) continue;
-    const undated = UNDATED_LINE.exec(line);
-    if (undated) {
-      const note = (undated[1] ?? '').trim();
-      conflicts.push(note ? { value: null, note: note.slice(0, 500) } : { value: null });
-      continue;
+    let rest = line;
+    let sourceId: string | undefined;
+    const ref = sourceIds.length ? SOURCE_REF.exec(line) : null;
+    if (ref) {
+      sourceId = sourceIds[Number(ref[1]) - 1];
+      if (!sourceId) {
+        unknownSource.push(line);
+        continue;
+      }
+      rest = line.slice(0, ref.index).trim();
     }
-    const match = /^(\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?)?)\s*(?:[-–—:|]\s*)?(.*)$/.exec(line);
-    const iso = match ? isoFromInput(match[1]) : null;
-    if (!match || !iso) {
+    const undated = UNDATED_LINE.exec(rest);
+    const dated = undated ? null : DATED_LINE.exec(rest);
+    const value = undated ? null : dated ? isoFromInput(dated[1]) : undefined;
+    if (value === undefined || (dated && !value)) {
       invalid.push(line);
       continue;
     }
-    const note = (match[2] ?? '').trim();
-    conflicts.push(note ? { value: iso, note: note.slice(0, 500) } : { value: iso });
+    const note = ((undated ?? dated)?.[undated ? 1 : 2] ?? '').trim();
+    conflicts.push({ value, ...(sourceId ? { sourceId } : {}), ...(note ? { note: note.slice(0, 500) } : {}) });
   }
-  return { conflicts, invalid };
+  return { conflicts, invalid, unknownSource };
 }
 
 /** Inverse of parseConflictLines, for prefilling a textarea. */
-export function conflictLines(conflicts: TimeConflictValue[] | null | undefined): string {
+export function conflictLines(conflicts: TimeConflictValue[] | null | undefined, sourceIds: readonly string[] = []): string {
   return (conflicts ?? [])
-    .map(c => [c.value ? inputFromIso(c.value).replace('T', ' ') : NO_DATE, c.note ?? ''].filter(Boolean).join(' '))
+    .map(c => {
+      const at = c.sourceId ? sourceIds.indexOf(c.sourceId) : -1;
+      return [c.value ? inputFromIso(c.value).replace('T', ' ') : NO_DATE, c.note ?? '', at >= 0 ? `[${at + 1}]` : ''].filter(Boolean).join(' ');
+    })
     .join('\n');
-}
-
-const FIELD_TAG = /^(effective|observed)\b:?\s*/;
-
-/**
- * Saving times through a form rewrites the record's whole list of competing values, and a line of text cannot
- * carry the source a value came from. This puts `sourceId` back on every value that is still there with the
- * same time (to the minute, as the form shows it) and the same note.
- */
-export function keepConflictSources(next: TimeConflictValue[], prior: TimeConflictValue[] | null | undefined): TimeConflictValue[] {
-  const when = (c: TimeConflictValue) => (c.value ? inputFromIso(c.value) : '');
-  const note = (c: TimeConflictValue) => (c.note ?? '').replace(FIELD_TAG, '').trim();
-  const left = (prior ?? []).filter(p => p.sourceId);
-  return next.map(c => {
-    if (c.sourceId) return c;
-    const at = left.findIndex(p => when(p) === when(c) && note(p) === note(c));
-    if (at < 0) return c;
-    const [hit] = left.splice(at, 1);
-    return hit?.sourceId ? { ...c, sourceId: hit.sourceId } : c;
-  });
 }
 
 /**

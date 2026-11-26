@@ -181,6 +181,7 @@ export default async function SourcePage({ params, searchParams }: { params: Par
       <CandidateForm
         action={createRecordAction}
         sourceId={source.id}
+        sourceTitle={source.title}
         revisionId={revision.id}
         content={content}
         actors={actors.ok ? actors.data : []}

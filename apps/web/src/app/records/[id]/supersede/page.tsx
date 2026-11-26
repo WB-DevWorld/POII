@@ -5,6 +5,7 @@ import { ActionForm, SubmitButton } from '@/components/ActionForm';
 import { ProblemNotice } from '@/components/ProblemNotice';
 import { RecordFields } from '@/components/RecordFields';
 import { apiTry } from '@/lib/api';
+import { conflictSourceList } from '@/lib/format';
 
 export const metadata: Metadata = { title: 'Supersede record' };
 
@@ -27,6 +28,11 @@ export default async function SupersedePage({ params }: { params: Params }) {
   }
   const record = result.data;
   const available = record.evidence.filter(e => e.available && e.sourceId);
+  // Sources a competing time value can be said to come from: what the old record cites, and what its values already name.
+  const timeSources = conflictSourceList(
+    available.map(e => ({ id: e.sourceId as string, title: e.sourceTitle ?? 'Source' })),
+    record.timeConflicts,
+  );
   return (
     <section>
       <p className="crumbs">
@@ -83,7 +89,7 @@ export default async function SupersedePage({ params }: { params: Params }) {
             </div>
           </details>
         </fieldset>
-        <RecordFields idPrefix="sup" actors={actors.ok ? actors.data : []} defaults={{ ...record, timeConflicts: record.timeConflicts }} />
+        <RecordFields idPrefix="sup" actors={actors.ok ? actors.data : []} defaults={{ ...record, timeConflicts: record.timeConflicts }} conflictSources={timeSources} />
         <div className="row actions">
           <SubmitButton>Create superseding candidate</SubmitButton>
           <a className="button secondary" href={`/records/${record.id}`}>Cancel</a>

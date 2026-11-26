@@ -16,7 +16,7 @@ import { lifecycleStatuses, recordKinds, reviewStates, statedRoles, statementMod
 import type { ActionState } from '@/lib/action-state';
 import { apiJson, toProblem, type Problem } from '@/lib/api';
 import { API_LONG_TIMEOUT_MS } from '@/lib/timeouts';
-import { isoFromInput, keepConflictSources, parseConflictLines, type TimeConflictValue } from '@/lib/format';
+import { isoFromInput, parseConflictLines, type TimeConflictValue } from '@/lib/format';
 import { guessMediaType, looksBinary } from '@/lib/upload';
 
 class InputProblem extends Error {
@@ -24,6 +24,8 @@ class InputProblem extends Error {
     super(message);
   }
 }
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const fail = (problem: Problem): ActionState => ({ ok: false, problem });
 const invalid = (message: string): ActionState => fail({ code: 'invalid_input', message });
@@ -95,7 +97,17 @@ function timeField(fd: FormData, field: 'effective' | 'observed', conflicts: Tim
     return { at: iso, status };
   }
   if (status === 'conflicting') {
-    const parsed = parseConflictLines(text(fd, `${field}Conflicts`));
+    // The sources the form listed under the box, in the order of their numbers.
+    const offered = fd.getAll(`${field}ConflictSource`).map(v => (typeof v === 'string' ? v : ''));
+    if (offered.some(id => !UUID.test(id))) throw new InputProblem('Reload the page and try again.');
+    const parsed = parseConflictLines(text(fd, `${field}Conflicts`), offered);
+    if (parsed.unknownSource.length) {
+      throw new InputProblem(
+        offered.length === 1
+          ? `${label}: "${parsed.unknownSource[0]}" names a source that is not listed. Only [1] is listed under the box.`
+          : `${label}: "${parsed.unknownSource[0]}" names a source that is not listed. Use a number from [1] to [${offered.length}], as listed under the box.`,
+      );
+    }
     if (parsed.invalid.length) {
       throw new InputProblem(
         `${label}: could not read "${parsed.invalid[0]}". Use one "YYYY-MM-DD HH:MM note" per line, or "no date note" for a value without a date.`,
@@ -123,16 +135,6 @@ function timesFrom(fd: FormData): TimeFields {
   }
   if (effective || observed) out.timeConflicts = conflicts.length ? conflicts : null;
   return out;
-}
-
-/**
- * The form's lines cannot carry the source a competing value came from (the API and the MCP server can set
- * one). When a record that already exists is saved, values that are still there keep their source.
- */
-async function withConflictSources<T extends TimeFields>(fields: T, recordId: string): Promise<T> {
-  if (!fields.timeConflicts?.length) return fields;
-  const prior = await apiJson<RecordDetail>(`/v1/records/${encodeURIComponent(recordId)}`);
-  return { ...fields, timeConflicts: keepConflictSources(fields.timeConflicts, prior.timeConflicts) };
 }
 
 // ----- sources ----------------------------------------------------------------------------------
@@ -286,7 +288,7 @@ export async function supersedeRecordAction(_state: ActionState, fd: FormData): 
   let record: RecordDetail;
   try {
     const evidence = evidenceFrom(fd);
-    const fields = await withConflictSources(await recordFieldsFrom(fd), oldId);
+    const fields = await recordFieldsFrom(fd);
     record = await apiJson<RecordDetail>(`/v1/records/${oldId}/supersede`, { method: 'POST', body: { ...fields, evidence } });
   } catch (error) {
     return failure(error);
@@ -297,7 +299,7 @@ export async function supersedeRecordAction(_state: ActionState, fd: FormData): 
 export async function updateRecordAction(_state: ActionState, fd: FormData): Promise<ActionState> {
   const id = trimmed(fd, 'recordId');
   try {
-    const body: UpdateRecordRequest = { ...(await withConflictSources(timesFrom(fd), id)) };
+    const body: UpdateRecordRequest = { ...timesFrom(fd) };
     if (fd.has('lifecycleStatus')) body.lifecycleStatus = oneOf(trimmed(fd, 'lifecycleStatus'), lifecycleStatuses, 'lifecycle status');
     if (fd.has('title')) {
       const title = trimmed(fd, 'title');
@@ -322,8 +324,6 @@ export async function updateRecordAction(_state: ActionState, fd: FormData): Pro
   }
   redirect(`/records/${id}?notice=edited`);
 }
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Adds one more cited span to a record that already exists (the "cite a passage" form on a source page). */
 export async function addEvidenceAction(_state: ActionState, fd: FormData): Promise<ActionState> {

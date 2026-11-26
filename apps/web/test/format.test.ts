@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   conflictLines,
+  conflictSourceList,
   conflictsFor,
   countLabel,
   describeTime,
@@ -11,7 +12,6 @@ import {
   humanize,
   inputFromIso,
   isoFromInput,
-  keepConflictSources,
   parseConflictLines,
 } from '../src/lib/format';
 import { guessMediaType, looksBinary } from '../src/lib/upload';
@@ -71,33 +71,52 @@ test('parseConflictLines reads a value without a date, and conflictLines writes 
   const stored = [{ value: '2026-07-08T00:00:00.000Z', note: 'supplier e-mail' }, { value: null, note: 'undated catalogue' }, { value: null }];
   const lines = conflictLines(stored);
   assert.equal(lines, '2026-07-08 00:00 supplier e-mail\nno date undated catalogue\nno date');
-  assert.deepEqual(parseConflictLines(lines), { conflicts: stored, invalid: [] });
+  assert.deepEqual(parseConflictLines(lines), { conflicts: stored, invalid: [], unknownSource: [] });
 });
 
-test('keepConflictSources puts the source back on values that are still there, and only on those', () => {
-  const src = '11111111-1111-4111-8111-111111111111';
-  const other = '22222222-2222-4222-8222-222222222222';
-  const prior = [
-    { value: '2026-07-08T00:00:30.000Z', sourceId: src, note: 'effective: supplier e-mail' },
-    { value: null, sourceId: other, note: 'undated catalogue' },
-    { value: null, note: 'effective: hearsay' },
+test('a competing value names its source by number, and only among the sources offered', () => {
+  const a = '11111111-1111-4111-8111-111111111111';
+  const b = '22222222-2222-4222-8222-222222222222';
+  const typed = [
+    '2026-07-08 supplier e-mail [1]',
+    'no date catalogue page [2]',
+    'no date [1]',
+    '2026-07-15 memo',
+    '2026-07-16 other [3]',
+    '2026-07-17 [0]',
+    '[1]',
+  ].join('\n');
+  const parsed = parseConflictLines(typed, [a, b]);
+  const stored = [
+    { value: '2026-07-08T00:00:00.000Z', sourceId: a, note: 'supplier e-mail' },
+    { value: null, sourceId: b, note: 'catalogue page' },
+    { value: null, sourceId: a },
+    { value: '2026-07-15T00:00:00.000Z', note: 'memo' },
   ];
-  const next = [
-    { value: '2026-07-08T00:00:00.000Z', note: 'effective: supplier e-mail' },
-    { value: null, note: 'effective: undated catalogue' },
-    { value: null, note: 'effective: undated catalogue' },
-    { value: '2026-07-09T00:00:00.000Z', note: 'effective: supplier e-mail' },
-    { value: null, note: 'effective: hearsay' },
-  ];
-  assert.deepEqual(keepConflictSources(next, prior), [
-    { value: '2026-07-08T00:00:00.000Z', note: 'effective: supplier e-mail', sourceId: src },
-    { value: null, note: 'effective: undated catalogue', sourceId: other },
-    // One stored source covers one value: a second identical line is a new value without a source.
-    { value: null, note: 'effective: undated catalogue' },
-    { value: '2026-07-09T00:00:00.000Z', note: 'effective: supplier e-mail' },
-    { value: null, note: 'effective: hearsay' },
-  ]);
-  assert.deepEqual(keepConflictSources(next, null), next);
+  assert.deepEqual(parsed.conflicts, stored);
+  // A number that is not offered is reported as such; a line that is only a number says nothing.
+  assert.deepEqual(parsed.unknownSource, ['2026-07-16 other [3]', '2026-07-17 [0]']);
+  assert.deepEqual(parsed.invalid, ['[1]']);
+
+  // The edit form writes the numbers back, and reading that gives the same values.
+  const lines = conflictLines(stored, [a, b]);
+  assert.equal(lines, '2026-07-08 00:00 supplier e-mail [1]\nno date catalogue page [2]\nno date [1]\n2026-07-15 00:00 memo');
+  assert.deepEqual(parseConflictLines(lines, [a, b]), { conflicts: stored, invalid: [], unknownSource: [] });
+
+  // Where no source is offered, "[1]" is ordinary note text and a stored source is not written out.
+  assert.deepEqual(parseConflictLines('2026-07-08 see footnote [1]').conflicts, [{ value: '2026-07-08T00:00:00.000Z', note: 'see footnote [1]' }]);
+  assert.equal(conflictLines(stored.slice(0, 1)), '2026-07-08 00:00 supplier e-mail');
+});
+
+test('conflictSourceList offers the cited sources first, once each, then any other source a stored value names', () => {
+  const a = '11111111-1111-4111-8111-111111111111';
+  const b = '22222222-2222-4222-8222-222222222222';
+  const list = conflictSourceList(
+    [{ id: a, title: 'Widget prices' }, { id: a, title: 'Widget prices' }],
+    [{ value: null, sourceId: b }, { value: null, sourceId: a }, { value: null }, { value: null, sourceId: b }],
+  );
+  assert.deepEqual(list, [{ id: a, title: 'Widget prices' }, { id: b, title: null }]);
+  assert.deepEqual(conflictSourceList([], null), []);
 });
 
 test('conflictsFor separates effective and observed values by note tag', () => {

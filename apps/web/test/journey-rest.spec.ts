@@ -14,7 +14,8 @@ const repoRoot = join(__dirname, '..', '..', '..');
 const webDir = join(__dirname, '..');
 const apiDir = join(repoRoot, 'apps', 'api');
 const runId = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-// The API of the install under test, for the one case a page cannot set up (a competing time that names its source).
+// The API of the install under test: to read back what a form stored, and for the one case a page does not set up
+// (a competing time that names a source the record does not cite).
 const apiUrl = `http://127.0.0.1:${Number(process.env.SMOKE_API_PORT ?? 3001)}`;
 
 /** A fixture with a per-run, per-test marker, so no run deduplicates into another run's (or test's) source. */
@@ -471,41 +472,42 @@ test('one record cites several passages: two kept at creation, more added from t
 
 // ----- a conflicting time with a value that has no date ---------------------------------------------
 
-test('conflicting dates: a value without a date can be typed in, is shown as such and survives an edit', async ({ page, request }) => {
+test('conflicting dates: a value without a date, and the source each value comes from, can be typed in and edited', async ({ page, request }) => {
   test.setTimeout(SLOW_START_TIMEOUT_MS);
   const sourceTitle = `Widget prices with dates ${runId}`;
   const recordTitle = `Type-B widget price: the sources disagree on when (${runId})`;
   const sourceId = await addSource(page, sourceTitle, fixture('price-conflict', 'dates'));
+  const storedRecord = async () => {
+    const response = await request.get(`${apiUrl}/v1/records/${recordId}`);
+    expect(response.ok()).toBeTruthy();
+    return (await response.json()) as { effectiveAtStatus: string; effectiveAt: string | null; timeConflicts: unknown };
+  };
 
-  // The dated e-mail against the catalogue page that carries no date.
+  // The dated e-mail against the catalogue page that carries no date. The candidate form offers this source as [1].
+  await page.goto(`/sources/${sourceId}`);
+  await expect(page.getByTestId('cand-effective-conflict-sources')).toContainText(`[1] ${sourceTitle}`);
   const recordId = await createCandidate(page, sourceId, {
-    needle: PRICE_CATALOGUE, title: recordTitle, kind: 'fact', effective: { conflicting: '2026-07-08 supplier e-mail\nno date catalogue page' },
+    needle: PRICE_CATALOGUE, title: recordTitle, kind: 'fact', effective: { conflicting: '2026-07-08 supplier e-mail [1]\nno date catalogue page' },
   });
   const effective = page.getByTestId('time-effective');
   await expect(effective.locator('.tag.danger')).toHaveText('conflicting');
-  await expect(effective.locator('li')).toHaveText(['2026-07-08 00:00 UTC (supplier e-mail)', 'no date (catalogue page)']);
+  await expect(effective.locator('li')).toHaveText([`2026-07-08 00:00 UTC (supplier e-mail) · source: ${sourceTitle}`, 'no date (catalogue page)']);
+  await expect(effective.getByTestId('conflict-source')).toHaveAttribute('href', `/sources/${sourceId}`);
+  expect((await storedRecord()).timeConflicts).toEqual([
+    { value: '2026-07-08T00:00:00.000Z', sourceId, note: 'effective: supplier e-mail' },
+    { value: null, note: 'effective: catalogue page' },
+  ]);
   // One cited passage: nothing to remove.
   await expect(page.getByTestId('remove-evidence')).toHaveCount(0);
 
-  // The API can say which source a competing value comes from; the form cannot. Set that here, as an agent would.
-  const patched = await request.patch(`${apiUrl}/v1/records/${recordId}`, {
-    data: {
-      timeConflicts: [
-        { value: '2026-07-08T00:00:00.000Z', sourceId, note: 'effective: supplier e-mail' },
-        { value: null, sourceId, note: 'effective: catalogue page' },
-      ],
-    },
-  });
-  expect(patched.ok(), await patched.text()).toBeTruthy();
-
-  // The edit form shows the value without a date in the form it accepts.
-  await page.goto(`/records/${recordId}`);
+  // The edit form shows both values in the form it accepts, with the source number, and lists the source.
   await page.locator('details.edit > summary').click();
   const lines = page.locator('#edit-effective-conflicts');
-  await expect(lines).toHaveValue('2026-07-08 00:00 supplier e-mail\nno date catalogue page');
+  await expect(lines).toHaveValue('2026-07-08 00:00 supplier e-mail [1]\nno date catalogue page');
+  await expect(page.getByTestId('edit-effective-conflict-sources')).toContainText(`[1] ${sourceTitle}`);
   const editForm = page.getByRole('form', { name: 'Edit record' });
 
-  // A line that is neither a date nor "no date" is refused, and so is a single value.
+  // Refused: a line that is neither a date nor "no date", a single value, a source number that is not listed.
   await lines.fill('2026-07-08 supplier e-mail\nlast week, says the catalogue');
   await page.getByRole('button', { name: 'Save changes', exact: true }).click();
   await expect(editForm.getByTestId('problem')).toContainText('could not read "last week, says the catalogue"');
@@ -513,23 +515,57 @@ test('conflicting dates: a value without a date can be typed in, is shown as suc
   await lines.fill('no date catalogue page');
   await page.getByRole('button', { name: 'Save changes', exact: true }).click();
   await expect(editForm.getByTestId('problem')).toContainText('list at least two competing values');
+  await lines.fill('2026-07-08 supplier e-mail\nno date catalogue page [2]');
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(editForm.getByTestId('problem')).toContainText('names a source that is not listed');
+  await expect(editForm.getByTestId('problem')).toContainText('Only [1] is listed');
 
-  // A third value is added; the two that were there keep their source.
-  await lines.fill('2026-07-08 00:00 supplier e-mail\nno date catalogue page\n2026-07-15 purchasing memo');
+  // The source moves from the first value to the second, and a third value is added without one.
+  await lines.fill('2026-07-08 00:00 supplier e-mail\nno date catalogue page [1]\n2026-07-15 purchasing memo');
   await page.getByRole('button', { name: 'Save changes', exact: true }).click();
   await page.waitForURL(/notice=edited/, { timeout: SUBMIT_TIMEOUT_MS });
   await expect(effective.locator('li')).toHaveText([
     '2026-07-08 00:00 UTC (supplier e-mail)',
-    'no date (catalogue page)',
+    `no date (catalogue page) · source: ${sourceTitle}`,
     '2026-07-15 00:00 UTC (purchasing memo)',
   ]);
-  const stored = await request.get(`${apiUrl}/v1/records/${recordId}`);
-  expect(stored.ok()).toBeTruthy();
-  const record = (await stored.json()) as { effectiveAtStatus: string; effectiveAt: string | null; timeConflicts: unknown };
-  expect(record.effectiveAtStatus).toBe('conflicting');
-  expect(record.effectiveAt).toBeNull();
-  expect(record.timeConflicts).toEqual([
-    { value: '2026-07-08T00:00:00.000Z', sourceId, note: 'effective: supplier e-mail' },
+  const afterEdit = await storedRecord();
+  expect(afterEdit.effectiveAtStatus).toBe('conflicting');
+  expect(afterEdit.effectiveAt).toBeNull();
+  expect(afterEdit.timeConflicts).toEqual([
+    { value: '2026-07-08T00:00:00.000Z', note: 'effective: supplier e-mail' },
+    { value: null, sourceId, note: 'effective: catalogue page' },
+    { value: '2026-07-15T00:00:00.000Z', note: 'effective: purchasing memo' },
+  ]);
+
+  // An agent can name a source the record does not cite. The pages show it, offer it as a number of its own and
+  // keep it through a save that changes something else.
+  const otherTitle = `Rate limit note beside the prices ${runId}`;
+  const otherId = await addSource(page, otherTitle, fixture('intent-vs-observed', 'dates'));
+  const patched = await request.patch(`${apiUrl}/v1/records/${recordId}`, {
+    data: {
+      timeConflicts: [
+        { value: '2026-07-08T00:00:00.000Z', sourceId: otherId, note: 'effective: supplier e-mail' },
+        { value: null, sourceId, note: 'effective: catalogue page' },
+      ],
+    },
+  });
+  expect(patched.ok(), await patched.text()).toBeTruthy();
+  await page.goto(`/records/${recordId}`);
+  await expect(effective.locator('li').first()).toContainText(`source: not cited by this record (…${otherId.slice(-8)})`);
+  await expect(effective.getByTestId('conflict-source').first()).toHaveAttribute('href', `/sources/${otherId}`);
+  await page.locator('details.edit > summary').click();
+  await expect(lines).toHaveValue('2026-07-08 00:00 supplier e-mail [2]\nno date catalogue page [1]');
+  await expect(page.getByTestId('edit-effective-conflict-sources').locator('li')).toHaveText([
+    `[1] ${sourceTitle}`,
+    `[2] a source this record does not cite (…${otherId.slice(-8)})`,
+  ]);
+  await page.locator('#edit-note').fill('times checked');
+  await lines.fill('2026-07-08 00:00 supplier e-mail [2]\nno date catalogue page [1]\n2026-07-15 purchasing memo');
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await page.waitForURL(/notice=edited/, { timeout: SUBMIT_TIMEOUT_MS });
+  expect((await storedRecord()).timeConflicts).toEqual([
+    { value: '2026-07-08T00:00:00.000Z', sourceId: otherId, note: 'effective: supplier e-mail' },
     { value: null, sourceId, note: 'effective: catalogue page' },
     { value: '2026-07-15T00:00:00.000Z', note: 'effective: purchasing memo' },
   ]);

@@ -11,6 +11,7 @@ import { SpanFields, spanSummary, useSpanSelection, type EvidenceRoleValue } fro
 type Props = {
   action: (state: ActionState, formData: FormData) => Promise<ActionState>;
   sourceId: string;
+  sourceTitle: string;
   revisionId: string;
   content: string;
   actors: ActorView[];
@@ -26,7 +27,7 @@ type KeptSpan = Span & { role: EvidenceRoleValue };
  * follow. A candidate can cite several passages of this source: keep a span, then select the next one. Without
  * JavaScript the offset inputs can be typed by hand and the form still submits (with one span).
  */
-export function CandidateForm({ action, sourceId, revisionId, content, actors, supersedable, initialSpan, preId = 'source-text' }: Props) {
+export function CandidateForm({ action, sourceId, sourceTitle, revisionId, content, actors, supersedable, initialSpan, preId = 'source-text' }: Props) {
   const [title, setTitle] = useState(initialSpan ? titleFromExcerpt(content.slice(initialSpan.start, initialSpan.end)) : '');
   const [kept, setKept] = useState<KeptSpan[]>([]);
   const selection = useSpanSelection({
@@ -93,7 +94,15 @@ export function CandidateForm({ action, sourceId, revisionId, content, actors, s
       {enhanced && kept.length === 0 ? (
         <p className="hint">A candidate can cite more than one passage of this source: keep a span, then select the next one.</p>
       ) : null}
-      <RecordFields idPrefix="cand" actors={actors} defaults={{ kind: '' }} title={title} onTitleChange={setTitle} />
+      <RecordFields
+        idPrefix="cand"
+        actors={actors}
+        defaults={{ kind: '' }}
+        title={title}
+        onTitleChange={setTitle}
+        // A new candidate cites this source, so this is the one source a competing time value can name here.
+        conflictSources={[{ id: sourceId, title: sourceTitle }]}
+      />
       {supersedable.length ? (
         <>
           <label htmlFor="cand-supersedes">Supersedes (optional)</label>
