@@ -142,7 +142,8 @@ const scannerContainers = () =>
   spawnSync('docker', ['ps', '-aq', '--filter', `ancestor=${GITLEAKS_IMAGE}`], { encoding: 'utf8' }).stdout.split(/\s+/).filter(Boolean).sort();
 
 const reportHtml = body => `<!doctype html><div id="root"></div><template id="playwrightReportBase64">data:application/zip;base64,${body}</template>`;
-const escaped = text => text.replace(/[.]/g, '\\.');
+// Every character that means something in a regular expression, backslash included.
+const escaped = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // Each scan starts a container, so the cases share three scans: one directory that must pass, one in which
 // everything is planted, and one that cannot be read.
