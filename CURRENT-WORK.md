@@ -2,6 +2,23 @@
 
 Newest entry first. Every entry says what was run and what was not. Mocked work is labelled mocked.
 
+## The pushed images are scanned; three deploys recorded — 2026-11-26 UTC (midday)
+
+Continues the entry below.
+
+[#96](https://github.com/WB-DevWorld/POII/pull/96) merged by auto-merge at 10:34:30 UTC as `4ea8020`. The catch-up chain deployed it (CI run 45802757344, publish 45803624641, Deploy staging 45803912994); staging served it at 10:43:57 UTC. That is the fourth commit the chain has deployed by itself. The new pages were not opened on staging by the agent: that needs the owner's sign-in.
+
+[#97](https://github.com/WB-DevWorld/POII/pull/97), gated, awaiting the owner:
+
+- `publish.yml` pulls each image back by the digest its push returned and runs `infra/scripts/artifact-scan.sh` on it, before the release record is written. Until now the scan read CI's own build of the same Dockerfiles, not the bytes that are deployed. A failed scan fails the publish; the images stay in the registry under their `sha-` tag, no record is written, and nothing deploys them.
+- The manifests of the staging deploys of `1dd0eef` (run 45742141356), `e0861c7` (run 45742858339) and `4ea8020` (run 45803912994) are recorded under `infra/releases/`, unchanged from the runs' artifacts. All three name the manifest of `4ba24f4` as `previous`: it was the newest one in the repository at each deploy.
+
+What was run: the new step's script, taken out of the YAML, on the development machine against the two images staging serves (pulled from the registry by digest). Exit 0; the API image clean, the web image with the five known lines of the three Next.js build keys. The same script with a missing digest: exit 1.
+
+Not run: the step on GitHub. `publish.yml` runs only for `main`, so the run after #97 merges is the first. A scan that fails inside the step was not provoked; the script's own failures are covered by its 16 tests.
+
+After #97 the deploy of #97 itself is the one manifest not in the repository.
+
 ## Several passages on one record, and a conflicting time without a date, in the browser — 2026-11-26 UTC (later)
 
 Continues the entry below.
