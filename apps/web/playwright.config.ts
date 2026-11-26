@@ -27,6 +27,9 @@ export default defineConfig({
   testIgnore: signin ? [] : SIGNIN_SPEC,
   timeout: 60_000,
   retries: 0,
+  // One browser at a time. Every test talks to the same API and the same database, so parallel browsers buy
+  // little, and on a busy machine several starting at once stalled each other's first requests.
+  workers: 1,
   // The HTML report lists every action with its argument and a trace records what is typed and every cookie,
   // so the sign-in run writes neither: the password it types would end up in a CI artifact.
   reporter: signin ? [['list']] : [['list'], ['html', { open: 'never' }]],
