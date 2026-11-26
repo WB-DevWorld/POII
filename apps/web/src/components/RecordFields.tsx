@@ -1,5 +1,5 @@
 import type { ActorView, LifecycleStatus, RecordKind, StatedRole, StatementMode, TimeStatus } from '@poii/contracts';
-import { conflictLines, conflictsFor, humanize, inputFromIso, type TimeConflictValue } from '@/lib/format';
+import { conflictLines, conflictsFor, humanize, inputFromIso, type ConflictSource, type TimeConflictValue } from '@/lib/format';
 
 const kinds: RecordKind[] = ['fact', 'requirement', 'decision', 'question'];
 const statuses: LifecycleStatus[] = ['proposed', 'decided', 'implemented', 'observed', 'unknown'];
@@ -22,19 +22,24 @@ export type RecordDefaults = {
   timeConflicts?: TimeConflictValue[] | null;
 };
 
-/** Effective or observed time: status plus value (UTC) plus competing values when conflicting. */
+/**
+ * Effective or observed time: status plus value (UTC) plus competing values when conflicting. With `sources`, a
+ * competing value can be said to come from one of them: its line ends with the source's number, "[1]".
+ */
 export function TimeInputs({
   field,
   idPrefix,
   status,
   value,
   conflicts,
+  sources = [],
 }: {
   field: 'effective' | 'observed';
   idPrefix: string;
   status?: TimeStatus;
   value?: string | null;
   conflicts?: TimeConflictValue[] | null;
+  sources?: ConflictSource[];
 }) {
   const label = field === 'effective' ? 'Effective time' : 'Observed time';
   const id = `${idPrefix}-${field}`;
@@ -63,12 +68,27 @@ export function TimeInputs({
         name={`${field}Conflicts`}
         className="short"
         placeholder={'2026-03-04 16:02 chat says\n2026-03-06 ticket says\nno date catalogue page'}
-        defaultValue={conflictLines(conflictsFor(field, conflicts))}
+        defaultValue={conflictLines(conflictsFor(field, conflicts), sources.map(s => s.id))}
       />
       <p className="hint">
         One per line: date, optional time (UTC), then a note. For a value whose source carries no date, start the line with
         &quot;no date&quot;. Only used when the status is conflicting.
       </p>
+      {sources.length ? (
+        <div className="hint" data-testid={`${id}-conflict-sources`}>
+          To say which source a value comes from, end its line with the source&apos;s number, for example{' '}
+          <span className="mono">2026-03-04 chat says [1]</span>:
+          <ul className="plain">
+            {sources.map((s, i) => (
+              <li key={s.id}>
+                {/* The order of these inputs is the numbering the lines refer to. */}
+                <input type="hidden" name={`${field}ConflictSource`} value={s.id} />
+                <span className="mono">[{i + 1}]</span> <a href={`/sources/${s.id}`}>{s.title ?? `a source this record does not cite (…${s.id.slice(-8)})`}</a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </fieldset>
   );
 }
@@ -143,12 +163,15 @@ export function RecordFields({
   defaults,
   title,
   onTitleChange,
+  conflictSources,
 }: {
   idPrefix: string;
   actors: ActorView[];
   defaults: RecordDefaults;
   title?: string;
   onTitleChange?: (value: string) => void;
+  /** Sources a competing time value can be said to come from. */
+  conflictSources?: ConflictSource[];
 }) {
   const titleProps = onTitleChange
     ? { value: title ?? '', onChange: (e: { target: { value: string } }) => onTitleChange(e.target.value) }
@@ -191,6 +214,7 @@ export function RecordFields({
         status={defaults.effectiveAtStatus}
         value={defaults.effectiveAt}
         conflicts={defaults.timeConflicts}
+        sources={conflictSources}
       />
       <TimeInputs
         field="observed"
@@ -198,6 +222,7 @@ export function RecordFields({
         status={defaults.observedAtStatus}
         value={defaults.observedAt}
         conflicts={defaults.timeConflicts}
+        sources={conflictSources}
       />
     </>
   );

@@ -15,7 +15,7 @@ import { PageNotice } from '@/components/PageNotice';
 import { ProblemNotice } from '@/components/ProblemNotice';
 import { RecordFields, TimeInputs } from '@/components/RecordFields';
 import { apiTry } from '@/lib/api';
-import { conflictsFor, formatTime, humanize, inputFromIso } from '@/lib/format';
+import { conflictSourceList, conflictsFor, formatTime, humanize, inputFromIso } from '@/lib/format';
 import type { SearchParams } from '@/lib/notices';
 import { spanHref } from '@/lib/offsets';
 
@@ -69,6 +69,8 @@ export default async function RecordPage({ params, searchParams }: { params: Par
       record.evidence.filter(e => e.available && e.sourceId).map(e => [e.sourceId as string, e.sourceTitle ?? 'Source'] as const),
     ),
   ];
+  // What a competing time value can be said to come from: those sources, and any other a stored value names.
+  const timeSources = conflictSourceList(citedSources.map(([sourceId, title]) => ({ id: sourceId, title })), conflicts);
 
   return (
     <section>
@@ -148,13 +150,13 @@ export default async function RecordPage({ params, searchParams }: { params: Par
         <div>
           <dt>Effective</dt>
           <dd data-testid="time-effective">
-            <TimeValue value={record.effectiveAt} status={record.effectiveAtStatus} conflicts={conflictsFor('effective', conflicts)} />
+            <TimeValue value={record.effectiveAt} status={record.effectiveAtStatus} conflicts={conflictsFor('effective', conflicts)} sources={timeSources} />
           </dd>
         </div>
         <div>
           <dt>Observed</dt>
           <dd data-testid="time-observed">
-            <TimeValue value={record.observedAt} status={record.observedAtStatus} conflicts={conflictsFor('observed', conflicts)} />
+            <TimeValue value={record.observedAt} status={record.observedAtStatus} conflicts={conflictsFor('observed', conflicts)} sources={timeSources} />
           </dd>
         </div>
       </dl>
@@ -343,11 +345,11 @@ export default async function RecordPage({ params, searchParams }: { params: Par
                     <option key={s} value={s}>{s}</option>
                   ))}
                 </select>
-                <TimeInputs field="effective" idPrefix="edit" status={record.effectiveAtStatus} value={record.effectiveAt} conflicts={conflicts} />
-                <TimeInputs field="observed" idPrefix="edit" status={record.observedAtStatus} value={record.observedAt} conflicts={conflicts} />
+                <TimeInputs field="effective" idPrefix="edit" status={record.effectiveAtStatus} value={record.effectiveAt} conflicts={conflicts} sources={timeSources} />
+                <TimeInputs field="observed" idPrefix="edit" status={record.observedAtStatus} value={record.observedAt} conflicts={conflicts} sources={timeSources} />
               </>
             ) : (
-              <RecordFields idPrefix="edit" actors={actors.ok ? actors.data : []} defaults={{ ...record, timeConflicts: conflicts }} />
+              <RecordFields idPrefix="edit" actors={actors.ok ? actors.data : []} defaults={{ ...record, timeConflicts: conflicts }} conflictSources={timeSources} />
             )}
             <label htmlFor="edit-note">Change note (optional)</label>
             <input id="edit-note" name="note" maxLength={2000} />
