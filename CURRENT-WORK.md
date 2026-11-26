@@ -2,6 +2,32 @@
 
 Newest entry first. Every entry says what was run and what was not. Mocked work is labelled mocked.
 
+## Snapshots repaired, images and reports scanned, the journey in a browser — 2026-11-26 UTC
+
+Continues the entry below.
+
+Merged to `main` on 2026-11-26 between 02:11 and 02:15 UTC:
+
+- [#94](https://github.com/WB-DevWorld/POII/pull/94) `8c04f77`, routine, by auto-merge: four browser tests for the rest of the manual journey (lifecycle status on `intent-vs-observed`; `price-conflict`; the backup download and the restore refusals; restore into a clean install with a second API and web app on an empty database). `playwright.config.ts` runs one browser at a time.
+- [#91](https://github.com/WB-DevWorld/POII/pull/91) `d14b214`, approved and merged by the owner: the record of the night of 2026-11-25.
+- [#92](https://github.com/WB-DevWorld/POII/pull/92) `0670fe2`, approved and merged by the owner: snapshots for migrations 0002 to 0005 and `infra/scripts/migration-snapshot-check.sh` as a CI step. No SQL migration and no schema file changed. Before the snapshots were written, the six SQL migrations and the TypeScript schema were compared through the database catalog and found to describe the same database (23 tables, 226 columns, 71 constraints, 55 indexes, 13 enums).
+- [#93](https://github.com/WB-DevWorld/POII/pull/93) `1dd0eef`, approved and merged by the owner: `infra/scripts/artifact-scan.sh`; CI scans both built images and the browser report before it is uploaded; `apps/api/test` is no longer in the build context.
+
+Found by this work:
+
+- The API image carried the seven hand-written mock provider responses of the API tests. They are not real provider output. Removed by #93.
+- Every web image holds three keys that Next.js generates per build (preview signing and encryption, server-action encryption). Listed as known in the scan; the owner decides whether that is acceptable.
+- In the browser a record can cite only one span, and a conflicting time cannot be entered for a value without a date. Both are in `BUILD-BASELINE.md` §4.1 and work through the API. Listed in `docs/release-one-status.md`.
+- On the development machine the browser tests failed at random with three browsers at once (first requests stalled for 10 to 20 seconds) and were stable with one. CI on Linux never showed it.
+
+What was run: on #92, the check against five deliberate breaks, the API suite at 180 tests, and `drizzle-kit check`. On #93, the scan of both locally built images and 16 script tests. On #94, the eight browser tests three times with one worker, across two sessions. CI green on every merged head; the new CI steps (snapshot check, image scan, report scan) ran for the first time on GitHub in those runs.
+
+Not run: the report scan on a real failed browser run; the scan of a pushed image; everything listed as not run in the entries below. MOCKED and labelled so, as before.
+
+Delegation, for the record: #92, #93 and #94 were built by helper sessions of the agent from written briefs. A usage limit stopped all three for about two and a half hours; they were resumed and finished. The agent read each result, reran the tests, set the one-worker rule and fixed one code-scanning finding in #93 itself.
+
+Owner questions added: the three Next.js build keys in the web image; whether dependency resolution is a gated class.
+
 ## Routine changes deploy by themselves; advisories cleared — 2026-11-25 UTC (night)
 
 Continues the entry below.
