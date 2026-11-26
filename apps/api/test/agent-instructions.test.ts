@@ -44,7 +44,7 @@ function rec(n: number, title: string, effectiveAt: string | null, ev: EvidenceV
       id: id(n), kind: 'decision', title, reviewState: 'confirmed', lifecycleStatus: 'decided', statedRole: 'owner',
       statementMode: 'quoted', statedByDisplayName: 'Owner', recordedAt: '2026-10-01T00:00:00.000Z', effectiveAt,
       effectiveAtStatus: effectiveAt ? 'known' : 'unknown', observedAt: null, observedAtStatus: 'not_applicable',
-      supersedesRecordId: null, supersededByRecordId: null, aiAllowed: true, versionNo: 2, updatedAt: '2026-10-01T00:00:00.000Z', ...extra,
+      supersedesRecordId: null, supersededByRecordId: null, supersededByReviewState: null, aiAllowed: true, versionNo: 2, updatedAt: '2026-10-01T00:00:00.000Z', ...extra,
     },
     body,
     approvals: [approval(n)],

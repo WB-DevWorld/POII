@@ -79,7 +79,8 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
                 <KindBadge kind={r.kind} />
                 <ReviewBadge state={r.reviewState} />
                 <StatusBadge status={r.lifecycleStatus} />
-                {r.supersededByRecordId ? <span className="tag warn">superseded</span> : null}
+                {r.supersededByReviewState === 'confirmed' ? <span className="tag warn">superseded</span> : null}
+                {r.supersededByReviewState === 'candidate' ? <span className="tag">replacement pending</span> : null}
                 {r.supersedesRecordId ? <span className="tag">supersedes another record</span> : null}
                 {!r.aiAllowed ? <AiBadge allowed={false} /> : null}
               </div>

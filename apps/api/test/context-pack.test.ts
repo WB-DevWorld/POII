@@ -21,7 +21,7 @@ function rec(n: number, aiAllowed: boolean, ev: EvidenceView[], extra: Partial<R
       id: id(n), kind: 'decision', title: `Decision ${n}`, reviewState: 'confirmed', lifecycleStatus: 'decided', statedRole: 'owner',
       statementMode: 'quoted', statedByDisplayName: 'Owner', recordedAt: '2026-10-01T00:00:00.000Z', effectiveAt: null,
       effectiveAtStatus: 'unknown', observedAt: null, observedAtStatus: 'not_applicable', supersedesRecordId: null,
-      supersededByRecordId: null, aiAllowed, versionNo: 2, updatedAt: '2026-10-01T00:00:00.000Z', ...extra,
+      supersededByRecordId: null, supersededByReviewState: null, aiAllowed, versionNo: 2, updatedAt: '2026-10-01T00:00:00.000Z', ...extra,
     },
     body: `Body ${n}`,
     statedByActorId: id(900),
@@ -102,4 +102,18 @@ test('context pack Markdown: attribution and approval apart, excerpts quoted as 
   assert.equal(pack.json.formatVersion, 1);
   const noExcerpts = buildContextPack(input('person', { includeExcerpts: false }));
   assert.ok(!noExcerpts.markdown.includes('SYSTEM NOTE'));
+});
+
+test('context pack: a waiting replacement is called pending, only a confirmed one "Superseded by"', () => {
+  const ev = [evidence(1, sAllowed, sAllowed, { sourceAiAllowed: true })];
+  const pending = buildContextPack(input('person', {
+    records: [rec(20, true, ev, { supersededByRecordId: id(21), supersededByReviewState: 'candidate' })],
+  }));
+  assert.match(pending.markdown, /- Replacement pending \(candidate, not confirmed; this record still counts\): `01900000-0000-7000-8000-000000000021`/);
+  assert.ok(!pending.markdown.includes('- Superseded by:'), 'a candidate successor never reads as superseded');
+  assert.equal(pending.json.records[0]!.supersededByReviewState, 'candidate');
+  const replaced = buildContextPack(input('person', {
+    records: [rec(20, true, ev, { supersededByRecordId: id(21), supersededByReviewState: 'confirmed' })],
+  }));
+  assert.match(replaced.markdown, /- Superseded by: `01900000-0000-7000-8000-000000000021`/);
 });

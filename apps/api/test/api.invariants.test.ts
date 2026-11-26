@@ -214,8 +214,16 @@ describe('API invariants (integration)', { skip: skipIntegration }, () => {
     assert.equal(b.supersedesRecordId, a.id);
     assert.equal(b.reviewState, 'candidate');
     assert.deepEqual((await current([a.id, b.id])).map(d => d.record.id), [a.id], 'an unconfirmed successor changes nothing');
+    // The list and the detail name the waiting successor, but say it is only a candidate (staff test, 26 Nov 2026:
+    // the list had tagged A "superseded" while A was still current).
+    const aPending = RecordDetail.parse((await c.get(`/v1/records/${a.id}`)).body);
+    assert.equal(aPending.supersededByRecordId, b.id);
+    assert.equal(aPending.supersededByReviewState, 'candidate');
+    const listed = ((await c.get('/v1/records?reviewState=confirmed&limit=200')).body as RecordSummary[]).find(r => r.id === a.id);
+    assert.equal(listed?.supersededByReviewState, 'candidate');
 
     const bConfirmed = await confirm(b.id);
+    assert.equal(RecordDetail.parse((await c.get(`/v1/records/${a.id}`)).body).supersededByReviewState, 'confirmed');
     assert.equal(bConfirmed.approvals[0]!.antecedentRecordId, a.id, 'antecedent defaults to supersedesRecordId');
     let now = await current([a.id, b.id]);
     assert.deepEqual(now.map(d => d.record.id), [b.id]);
