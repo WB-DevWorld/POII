@@ -168,5 +168,10 @@ pre.source ::selection { background: color-mix(in srgb, var(--accent) 35%, trans
   .pairs { grid-template-columns: 1fr; }
   .pairs dd { margin-bottom: 0.4rem; }
   .site-footer { flex-direction: column; gap: 0.25rem; }
+  /* Phones: tables keep readable columns and scroll sideways instead of squeezing every cell (staff test,
+     26 Nov 2026). A table outside a .table-wrap becomes its own scroll box. */
+  table:not(.table-wrap > table) { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  th, td { min-width: 7rem; overflow-wrap: anywhere; }
+  th:has(> input), td:has(> input[type="checkbox"]), th:has(> .visually-hidden) { min-width: 0; }
 }
 .card > h2:first-child, .card > h3:first-child, .card > summary:first-child { margin-top: 0; }
