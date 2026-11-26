@@ -1,0 +1,9 @@
+{
+  "sourceSha": "e0861c7ecbdd9af8f82b832ebbf1948383e53775",
+  "api": "ghcr.io/wb-devworld/poii-api@sha256:17376ad6116d56a0d30c3c97c2b8e0360755f52c3ea5c62e83f0c6e779453376",
+  "web": "ghcr.io/wb-devworld/poii-web@sha256:96303646ad57a8008bfc34f78fa1897181ed469a7b1fa08e8f43b118418334aa",
+  "environment": "staging",
+  "deployedAt": "2026-11-26T02:31:07.368Z",
+  "observedReadyVersion": "e0861c7ecbdd9af8f82b832ebbf1948383e53775",
+  "previous": "staging-20261125T213540Z-4ba24f41ccc4.json"
+}

@@ -69,6 +69,32 @@ jobs:
           push: true
           build-args: GIT_SHA=${{ github.event.workflow_run.head_sha || github.sha }}
           tags: ghcr.io/wb-devworld/poii-web:sha-${{ github.event.workflow_run.head_sha || github.sha }}
+      # ci.yml scans its own build of the same Dockerfiles. This reads the bytes that were pushed: each image is
+      # pulled back by the digest the push returned and scanned with the same script (every layer for forbidden
+      # names and non-runtime material, gitleaks over /app and the image configuration). Both are always scanned.
+      # It runs before the release record is written. A failed scan leaves the images in the registry under
+      # their sha tag, but writes no record, and without the record nothing deploys them: deploy-staging.yml and
+      # main-ci-catchup.sh both stop when the publish did not succeed.
+      - name: Scan the pushed images for secrets and forbidden material
+        env:
+          API_IMAGE: ghcr.io/wb-devworld/poii-api@${{ steps.api.outputs.digest }}
+          WEB_IMAGE: ghcr.io/wb-devworld/poii-web@${{ steps.web.outputs.digest }}
+        run: |
+          set -euo pipefail
+          status=0
+          for pair in "api $API_IMAGE" "web $WEB_IMAGE"; do
+            name="${pair%% *}"
+            ref="${pair#* }"
+            [[ "$ref" =~ @sha256:[0-9a-f]{64}$ ]] || { echo "::error::The push of the $name image returned no digest."; exit 1; }
+            docker pull --quiet "$ref"
+            # The scan reads a local image by name; the tag exists only on this runner.
+            docker tag "$ref" "poii-$name:pushed"
+            bash infra/scripts/artifact-scan.sh image "poii-$name:pushed" || status=1
+          done
+          if [ "$status" -ne 0 ]; then
+            echo "::error::A pushed image failed the scan. No release record is written, so nothing deploys it."
+          fi
+          exit "$status"
       - name: Record immutable image references
         run: |
           {
