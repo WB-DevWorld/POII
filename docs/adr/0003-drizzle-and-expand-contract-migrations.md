@@ -17,4 +17,6 @@ SQL-first migrations are reviewable, path-classifiable and portable. Drizzle add
 
 ## Consequences
 
+Every migration, generated or hand-written, is committed with its `meta/NNNN_snapshot.json`; CI fails when `drizzle-kit generate` is not a no-op for the committed schema (`infra/scripts/migration-snapshot-check.sh`, added 2026-11-26 after migrations 0002 to 0005 were found to have none).
+
 Never cancel a running migration. Rolling back the app (previous digest) and restoring the database are separate procedures.
