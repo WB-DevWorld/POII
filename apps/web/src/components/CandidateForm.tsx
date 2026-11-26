@@ -1,11 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { ActorView } from '@poii/contracts';
 import type { ActionState } from '@/lib/action-state';
-import { lineOfOffset, normalizeSpan, pointToOffset, titleFromExcerpt, trimSpan, type Span } from '@/lib/offsets';
+import { titleFromExcerpt, type Span } from '@/lib/offsets';
 import { ActionForm, SubmitButton } from './ActionForm';
 import { RecordFields } from './RecordFields';
+import { SpanFields, spanSummary, useSpanSelection, type EvidenceRoleValue } from './SpanPicker';
 
 type Props = {
   action: (state: ActionState, formData: FormData) => Promise<ActionState>;
@@ -18,89 +19,32 @@ type Props = {
   preId?: string;
 };
 
-function dataNumber(el: Element | null | undefined, key: 'o' | 's' | 'e'): number | null {
-  const value = (el as HTMLElement | null | undefined)?.dataset?.[key];
-  return value === undefined ? null : Number(value);
-}
-
-/** Maps one DOM boundary point inside the source <pre> to a raw offset into the revision content. */
-function resolvePoint(pre: HTMLElement, node: Node, offset: number, length: number): number {
-  if (!pre.contains(node)) {
-    // The selection runs past the <pre>: clamp to its start or end.
-    return pre.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_PRECEDING ? 0 : length;
-  }
-  if (node.nodeType === Node.TEXT_NODE) {
-    const chunk = node.parentElement?.closest('[data-o]');
-    const start = dataNumber(chunk, 'o');
-    if (start !== null) return pointToOffset(start, offset, node.textContent?.length ?? 0);
-    const line = node.parentElement?.closest('[data-s]');
-    return dataNumber(line, 's') ?? 0;
-  }
-  const el = node as Element;
-  const child = el.childNodes[offset];
-  if (child) {
-    if (child.nodeType === Node.TEXT_NODE) return resolvePoint(pre, child, 0, length);
-    const c = child as Element;
-    const own = dataNumber(c, 'o') ?? dataNumber(c, 's');
-    if (own !== null) return own;
-    const inner = c.querySelector('[data-o],[data-s]');
-    if (inner) return dataNumber(inner, 'o') ?? dataNumber(inner, 's') ?? 0;
-  }
-  // Point after the last child: the end of this element.
-  const end = dataNumber(el, 'e');
-  if (end !== null) return end;
-  const chunkStart = dataNumber(el, 'o');
-  if (chunkStart !== null) return chunkStart + (el.textContent?.length ?? 0);
-  const lines = el.querySelectorAll('[data-e]');
-  const last = lines[lines.length - 1];
-  return dataNumber(last, 'e') ?? length;
-}
+type KeptSpan = Span & { role: EvidenceRoleValue };
 
 /**
  * "Create candidate from selection": select text in the source and the offsets, excerpt and a title prefill
- * follow. Without JavaScript the offset inputs can be typed by hand and the form still submits.
+ * follow. A candidate can cite several passages of this source: keep a span, then select the next one. Without
+ * JavaScript the offset inputs can be typed by hand and the form still submits (with one span).
  */
 export function CandidateForm({ action, sourceId, revisionId, content, actors, supersedable, initialSpan, preId = 'source-text' }: Props) {
-  const [span, setSpan] = useState<{ start: string; end: string }>({
-    start: initialSpan ? String(initialSpan.start) : '',
-    end: initialSpan ? String(initialSpan.end) : '',
-  });
   const [title, setTitle] = useState(initialSpan ? titleFromExcerpt(content.slice(initialSpan.start, initialSpan.end)) : '');
-  const [enhanced, setEnhanced] = useState(false);
+  const [kept, setKept] = useState<KeptSpan[]>([]);
+  const selection = useSpanSelection({
+    content,
+    initialSpan,
+    preId,
+    // The title follows the first passage only; later ones must not overwrite it.
+    onPick: span => {
+      if (kept.length === 0) setTitle(titleFromExcerpt(content.slice(span.start, span.end)));
+    },
+  });
+  const { picked, role, enhanced } = selection;
 
-  const fromSelection = useCallback(() => {
-    const pre = document.getElementById(preId);
-    const selection = window.getSelection();
-    if (!pre || !selection || selection.rangeCount === 0 || selection.isCollapsed) return false;
-    const range = selection.getRangeAt(0);
-    if (!range.intersectsNode(pre)) return false;
-    const a = resolvePoint(pre, range.startContainer, range.startOffset, content.length);
-    const b = resolvePoint(pre, range.endContainer, range.endOffset, content.length);
-    const trimmedSpan = trimSpan(content, normalizeSpan(a, b, content.length));
-    if (!trimmedSpan) return false;
-    setSpan({ start: String(trimmedSpan.start), end: String(trimmedSpan.end) });
-    setTitle(titleFromExcerpt(content.slice(trimmedSpan.start, trimmedSpan.end)));
-    return true;
-  }, [content, preId]);
-
-  useEffect(() => {
-    setEnhanced(true);
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const onChange = () => {
-      clearTimeout(timer);
-      timer = setTimeout(fromSelection, 120);
-    };
-    document.addEventListener('selectionchange', onChange);
-    return () => {
-      clearTimeout(timer);
-      document.removeEventListener('selectionchange', onChange);
-    };
-  }, [fromSelection]);
-
-  const start = Number(span.start);
-  const end = Number(span.end);
-  const valid = span.start !== '' && span.end !== '' && Number.isInteger(start) && Number.isInteger(end) && end > start && end <= content.length;
-  const excerpt = valid ? content.slice(start, end) : '';
+  const keep = () => {
+    if (!picked) return;
+    setKept(list => (list.some(s => s.start === picked.start && s.end === picked.end) ? list : [...list, { ...picked, role }]));
+    selection.clear();
+  };
 
   return (
     <ActionForm action={action} className="card candidate-form" aria-label="Create candidate from selection" testId="candidate-form">
@@ -112,61 +56,43 @@ export function CandidateForm({ action, sourceId, revisionId, content, actors, s
       </p>
       <input type="hidden" name="sourceId" value={sourceId} />
       <input type="hidden" name="revisionId" value={revisionId} />
-      <fieldset>
-        <legend>Cited span</legend>
-        <div className="inline-fields">
-          <div>
-            <label htmlFor="cand-start">Start offset</label>
-            <input
-              id="cand-start"
-              name="startChar"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              required
-              value={span.start}
-              onChange={e => setSpan(s => ({ ...s, start: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label htmlFor="cand-end">End offset</label>
-            <input
-              id="cand-end"
-              name="endChar"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              required
-              value={span.end}
-              onChange={e => setSpan(s => ({ ...s, end: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label htmlFor="cand-evrole">Evidence role</label>
-            <select id="cand-evrole" name="evidenceRole" defaultValue="primary">
-              <option value="primary">primary</option>
-              <option value="supporting">supporting</option>
-            </select>
-          </div>
-        </div>
-        {enhanced ? (
-          <div className="excerpt" aria-live="polite" data-testid="selected-excerpt">
-            {valid ? (
-              <>
-                <span className="hint">
-                  Lines {lineOfOffset(content, start)}–{lineOfOffset(content, Math.max(start, end - 1))}, {end - start} characters
-                </span>
-                <blockquote>{excerpt.length > 600 ? `${excerpt.slice(0, 600)}…` : excerpt}</blockquote>
-              </>
-            ) : (
-              <span className="hint">No span selected yet.</span>
-            )}
-          </div>
-        ) : null}
-        {enhanced ? (
-          <button type="button" className="secondary" onClick={() => fromSelection()}>
-            Use current selection
-          </button>
-        ) : null}
-      </fieldset>
+      {kept.length ? (
+        <fieldset data-testid="kept-spans">
+          <legend>Passages kept for this candidate</legend>
+          <ul className="plain">
+            {kept.map(s => {
+              const excerpt = content.slice(s.start, s.end);
+              return (
+                <li key={`${s.start}-${s.end}`} className="excerpt">
+                  {/* Same wire format as the supersede form: "sourceId|revisionId|start|end|role". */}
+                  <input type="hidden" name="keepEvidence" value={[sourceId, revisionId, s.start, s.end, s.role].join('|')} />
+                  <span className="hint">
+                    {spanSummary(content, s)}, {s.role}
+                  </span>
+                  <blockquote>{excerpt.length > 300 ? `${excerpt.slice(0, 300)}…` : excerpt}</blockquote>
+                  <button type="button" className="secondary" onClick={() => setKept(list => list.filter(k => k !== s))}>
+                    Drop this passage
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </fieldset>
+      ) : null}
+      <SpanFields
+        idPrefix="cand"
+        legend={kept.length ? 'Another cited span (optional)' : 'Cited span'}
+        content={content}
+        selection={selection}
+        required={kept.length === 0}
+      >
+        <button type="button" className="secondary" onClick={keep} disabled={!picked} data-testid="keep-span">
+          Keep this span and select another
+        </button>
+      </SpanFields>
+      {enhanced && kept.length === 0 ? (
+        <p className="hint">A candidate can cite more than one passage of this source: keep a span, then select the next one.</p>
+      ) : null}
       <RecordFields idPrefix="cand" actors={actors} defaults={{ kind: '' }} title={title} onTitleChange={setTitle} />
       {supersedable.length ? (
         <>

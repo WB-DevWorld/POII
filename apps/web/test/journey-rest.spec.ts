@@ -14,6 +14,8 @@ const repoRoot = join(__dirname, '..', '..', '..');
 const webDir = join(__dirname, '..');
 const apiDir = join(repoRoot, 'apps', 'api');
 const runId = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+// The API of the install under test, for the one case a page cannot set up (a competing time that names its source).
+const apiUrl = `http://127.0.0.1:${Number(process.env.SMOKE_API_PORT ?? 3001)}`;
 
 /** A fixture with a per-run, per-test marker, so no run deduplicates into another run's (or test's) source. */
 function fixture(name: 'intent-vs-observed' | 'price-conflict', tag: string): string {
@@ -116,8 +118,8 @@ type Candidate = {
   status?: Lifecycle;
   /** A person added inline as "stated by" (always a third party here: the fixtures' people are not the workspace owner). */
   statedBy?: string;
-  /** Effective time: a `datetime-local` value (UTC) for known, or the explicit status unknown. */
-  effective?: { at: string } | 'unknown';
+  /** Effective time: a `datetime-local` value (UTC) for known, the explicit status unknown, or competing values (one per line). */
+  effective?: { at: string } | { conflicting: string } | 'unknown';
 };
 
 /** Creates a candidate on the source page from a real selection of `needle`; ends on the new record's page. */
@@ -140,6 +142,9 @@ async function createCandidate(page: Page, sourceId: string, candidate: Candidat
   await page.locator('#cand-mode').selectOption('quoted');
   if (candidate.effective === 'unknown') {
     await page.locator('#cand-effective-status').selectOption('unknown');
+  } else if (candidate.effective && 'conflicting' in candidate.effective) {
+    await page.locator('#cand-effective-status').selectOption('conflicting');
+    await page.locator('#cand-effective-conflicts').fill(candidate.effective.conflicting);
   } else if (candidate.effective) {
     await page.locator('#cand-effective-status').selectOption('known');
     await page.locator('#cand-effective-at').fill(candidate.effective.at);
@@ -354,6 +359,180 @@ test('price conflict: both prices stay visible with their sources, and which one
   await decision.getByRole('link', { name: /Primary evidence/ }).click();
   await page.waitForURL(new RegExp(`/sources/${sourceId}\\?.*start=\\d+&end=\\d+`));
   await expect(page.locator('mark#span')).toHaveText(PRICE_MEMO);
+});
+
+// ----- step 2: one or more cited spans --------------------------------------------------------------
+
+/** The cited passages of the open record, sorted: evidence rows made in one request have no fixed order. */
+async function citedPassages(page: Page): Promise<string[]> {
+  return (await page.getByTestId('evidence-list').locator('blockquote').allTextContents()).sort();
+}
+
+test('one record cites several passages: two kept at creation, more added from the record, across two sources', async ({ page }) => {
+  test.setTimeout(SLOW_START_TIMEOUT_MS);
+  const pricesTitle = `Widget prices for citing ${runId}`;
+  const limitTitle = `Rate limit note for citing ${runId}`;
+  const recordTitle = `Type-B widget: which price applies (${runId})`;
+  const pricesId = await addSource(page, pricesTitle, fixture('price-conflict', 'spans'));
+  const limitId = await addSource(page, limitTitle, fixture('intent-vs-observed', 'spans'));
+
+  // Two passages at creation: keep the first span, then select the second. The title stays what was typed.
+  await page.goto(`/sources/${pricesId}`);
+  const candidateForm = page.getByTestId('candidate-form');
+  await expect(candidateForm.getByRole('button', { name: 'Use current selection' })).toBeVisible();
+  await expect(page.getByTestId('keep-span')).toBeDisabled();
+  await selectText(page, PRICE_EMAIL);
+  await expect(page.getByTestId('selected-excerpt').locator('blockquote')).toHaveText(PRICE_EMAIL);
+  await page.locator('#cand-title').fill(recordTitle);
+  await page.getByTestId('keep-span').click();
+  await expect(page.getByTestId('kept-spans').locator('blockquote')).toHaveText([PRICE_EMAIL]);
+  await expect(page.getByTestId('kept-spans')).toContainText('primary');
+  await expect(page.locator('#cand-start')).toHaveValue('');
+  await expect(page.getByTestId('selected-excerpt')).toContainText('No span selected yet.');
+  await page.locator('#cand-evrole').selectOption('supporting');
+  await selectText(page, PRICE_MEMO);
+  await expect(page.getByTestId('selected-excerpt').locator('blockquote')).toHaveText(PRICE_MEMO);
+  await expect(page.locator('#cand-title')).toHaveValue(recordTitle);
+  await page.locator('#cand-kind').selectOption('decision');
+  await submit(page, 'Create candidate', new RegExp(`/records/${ID}\\?notice=created`));
+  const recordId = idFrom(page, 'records');
+  const recordUrl = `/records/${recordId}`;
+  const evidence = page.getByTestId('evidence-list');
+  await expect(evidence.locator('li')).toHaveCount(2);
+  expect(await citedPassages(page)).toEqual([PRICE_EMAIL, PRICE_MEMO].sort());
+  await expect(evidence.locator('li').filter({ hasText: PRICE_EMAIL }).locator('.tag').first()).toHaveText('primary');
+  await expect(evidence.locator('li').filter({ hasText: PRICE_MEMO }).locator('.tag').first()).toHaveText('supporting');
+
+  // A third passage, added from the record: the record names the source it already cites.
+  const cite = page.getByTestId('cite-another');
+  await expect(cite.getByRole('link')).toHaveText([pricesTitle, 'Another source…']);
+  await cite.getByRole('link', { name: pricesTitle }).click();
+  await page.waitForURL(new RegExp(`/sources/${pricesId}\\?addTo=${recordId}`));
+  const addForm = page.getByTestId('add-evidence-form');
+  await expect(page.getByTestId('add-evidence-record')).toContainText(recordTitle);
+  await expect(addForm.getByRole('button', { name: 'Use current selection' })).toBeVisible();
+  await selectText(page, PRICE_CATALOGUE);
+  await expect(page.getByTestId('add-evidence-excerpt').locator('blockquote')).toHaveText(PRICE_CATALOGUE);
+  await page.locator('#ev-evrole').selectOption('supporting');
+  await submit(page, 'Add as evidence', new RegExp(`/records/${recordId}\\?notice=evidence-added`));
+  await expect(page.getByTestId('notice')).toHaveAttribute('data-notice', 'evidence-added');
+  await expect(evidence.locator('li')).toHaveCount(3);
+  expect(await citedPassages(page)).toEqual([PRICE_EMAIL, PRICE_MEMO, PRICE_CATALOGUE].sort());
+  await expect(page.getByTestId('record-title')).toHaveText(recordTitle);
+  await expect(page.getByTestId('review-state').first()).toHaveText('candidate');
+  await expect(historyKinds(page)).toHaveText(['evidence', 'create']);
+
+  // A fourth, from another source, chosen in the sources list. Without a passage the form asks for one.
+  await page.getByTestId('cite-another').getByRole('link', { name: 'Another source…' }).click();
+  await page.waitForURL(new RegExp(`/sources\\?addTo=${recordId}`));
+  await expect(page.getByTestId('picking-source')).toContainText(recordTitle);
+  await page.getByTestId('sources-table').getByRole('link', { name: limitTitle }).click();
+  await page.waitForURL(new RegExp(`/sources/${limitId}\\?addTo=${recordId}`));
+  await expect(page.getByTestId('add-evidence-record')).toContainText(recordTitle);
+  await expect(addForm.getByRole('button', { name: 'Use current selection' })).toBeVisible();
+  await page.locator('#ev-start').fill('9');
+  await page.locator('#ev-end').fill('4');
+  await page.getByRole('button', { name: 'Add as evidence', exact: true }).click();
+  await expect(addForm.getByTestId('problem')).toContainText('the end offset must be after the start offset');
+  await selectText(page, LIMIT_LOG);
+  await expect(page.getByTestId('add-evidence-excerpt').locator('blockquote')).toHaveText(LIMIT_LOG);
+  // Not through submit(): the refusal above is still on the page, and submit() would read it as a new one.
+  await page.getByRole('button', { name: 'Add as evidence', exact: true }).click();
+  await page.waitForURL(new RegExp(`/records/${recordId}\\?notice=evidence-added`), { timeout: SUBMIT_TIMEOUT_MS });
+  await expect(evidence.locator('li')).toHaveCount(4);
+  const fromLimit = evidence.locator('li').filter({ hasText: LIMIT_LOG });
+  await expect(fromLimit.getByTestId('evidence-link')).toContainText(limitTitle);
+  await fromLimit.getByTestId('evidence-link').click();
+  await page.waitForURL(new RegExp(`/sources/${limitId}\\?.*start=\\d+&end=\\d+`));
+  await expect(page.locator('mark#span')).toHaveText(LIMIT_LOG);
+  // The second source now lists the record, with the way back in to cite more of it.
+  const citing = page.getByTestId('citing-records');
+  await expect(rowFor(citing, recordId)).toContainText(recordTitle);
+  await expect(rowFor(citing, recordId).getByRole('link', { name: 'Cite another passage of this source' })).toHaveAttribute(
+    'href',
+    new RegExp(`/sources/${limitId}\\?addTo=${recordId}#add-evidence$`),
+  );
+
+  // A citation added by mistake can be removed; the history keeps both steps.
+  await page.goto(recordUrl);
+  await expect(page.getByTestId('remove-evidence')).toHaveCount(4);
+  await evidence.locator('li').filter({ hasText: PRICE_CATALOGUE }).getByRole('button', { name: 'Remove this citation' }).click();
+  await page.waitForURL(/notice=evidence-removed/, { timeout: SUBMIT_TIMEOUT_MS });
+  await expect(page.getByTestId('notice')).toHaveAttribute('data-notice', 'evidence-removed');
+  await expect(evidence.locator('li')).toHaveCount(3);
+  expect(await citedPassages(page)).toEqual([PRICE_EMAIL, PRICE_MEMO, LIMIT_LOG].sort());
+  await expect(historyKinds(page)).toHaveText(['evidence', 'evidence', 'evidence', 'create']);
+
+  // Confirming keeps every passage, and the owner can still cite more afterwards.
+  await confirmHere(page);
+  await expect(evidence.locator('li')).toHaveCount(3);
+  await expect(page.getByTestId('cite-another').getByRole('link')).toHaveText([pricesTitle, limitTitle, 'Another source…']);
+});
+
+// ----- a conflicting time with a value that has no date ---------------------------------------------
+
+test('conflicting dates: a value without a date can be typed in, is shown as such and survives an edit', async ({ page, request }) => {
+  test.setTimeout(SLOW_START_TIMEOUT_MS);
+  const sourceTitle = `Widget prices with dates ${runId}`;
+  const recordTitle = `Type-B widget price: the sources disagree on when (${runId})`;
+  const sourceId = await addSource(page, sourceTitle, fixture('price-conflict', 'dates'));
+
+  // The dated e-mail against the catalogue page that carries no date.
+  const recordId = await createCandidate(page, sourceId, {
+    needle: PRICE_CATALOGUE, title: recordTitle, kind: 'fact', effective: { conflicting: '2026-07-08 supplier e-mail\nno date catalogue page' },
+  });
+  const effective = page.getByTestId('time-effective');
+  await expect(effective.locator('.tag.danger')).toHaveText('conflicting');
+  await expect(effective.locator('li')).toHaveText(['2026-07-08 00:00 UTC (supplier e-mail)', 'no date (catalogue page)']);
+  // One cited passage: nothing to remove.
+  await expect(page.getByTestId('remove-evidence')).toHaveCount(0);
+
+  // The API can say which source a competing value comes from; the form cannot. Set that here, as an agent would.
+  const patched = await request.patch(`${apiUrl}/v1/records/${recordId}`, {
+    data: {
+      timeConflicts: [
+        { value: '2026-07-08T00:00:00.000Z', sourceId, note: 'effective: supplier e-mail' },
+        { value: null, sourceId, note: 'effective: catalogue page' },
+      ],
+    },
+  });
+  expect(patched.ok(), await patched.text()).toBeTruthy();
+
+  // The edit form shows the value without a date in the form it accepts.
+  await page.goto(`/records/${recordId}`);
+  await page.locator('details.edit > summary').click();
+  const lines = page.locator('#edit-effective-conflicts');
+  await expect(lines).toHaveValue('2026-07-08 00:00 supplier e-mail\nno date catalogue page');
+  const editForm = page.getByRole('form', { name: 'Edit record' });
+
+  // A line that is neither a date nor "no date" is refused, and so is a single value.
+  await lines.fill('2026-07-08 supplier e-mail\nlast week, says the catalogue');
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(editForm.getByTestId('problem')).toContainText('could not read "last week, says the catalogue"');
+  await expect(editForm.getByTestId('problem')).toContainText('"no date note"');
+  await lines.fill('no date catalogue page');
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(editForm.getByTestId('problem')).toContainText('list at least two competing values');
+
+  // A third value is added; the two that were there keep their source.
+  await lines.fill('2026-07-08 00:00 supplier e-mail\nno date catalogue page\n2026-07-15 purchasing memo');
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await page.waitForURL(/notice=edited/, { timeout: SUBMIT_TIMEOUT_MS });
+  await expect(effective.locator('li')).toHaveText([
+    '2026-07-08 00:00 UTC (supplier e-mail)',
+    'no date (catalogue page)',
+    '2026-07-15 00:00 UTC (purchasing memo)',
+  ]);
+  const stored = await request.get(`${apiUrl}/v1/records/${recordId}`);
+  expect(stored.ok()).toBeTruthy();
+  const record = (await stored.json()) as { effectiveAtStatus: string; effectiveAt: string | null; timeConflicts: unknown };
+  expect(record.effectiveAtStatus).toBe('conflicting');
+  expect(record.effectiveAt).toBeNull();
+  expect(record.timeConflicts).toEqual([
+    { value: '2026-07-08T00:00:00.000Z', sourceId, note: 'effective: supplier e-mail' },
+    { value: null, sourceId, note: 'effective: catalogue page' },
+    { value: '2026-07-15T00:00:00.000Z', note: 'effective: purchasing memo' },
+  ]);
 });
 
 // ----- step 8: backup and restore -----------------------------------------------------------------
