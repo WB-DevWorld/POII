@@ -88,6 +88,11 @@ export class RecordsService {
     if (!statedByActorId && wanted.statedRole === 'owner' && ctx.actor.kind === 'person' && ctx.actor.authority === 'owner') {
       statedByActorId = ctx.actor.id;
     }
+    // Role assistant says which assistant it was. Without one the record read "stated by unknown, role assistant"
+    // (staff test, 26 Nov 2026); the form already says the assistant must be named.
+    if (!statedByActorId && wanted.statedRole === 'assistant') {
+      throw badRequest('attribution_mismatch', 'statedRole assistant must name an ai_assistant actor');
+    }
     if (statedByActorId) {
       const stated = (await exec.select().from(actor).where(and(eq(actor.id, statedByActorId), eq(actor.workspaceId, ctx.workspace.id))))[0];
       if (!stated) throw notFound('Stated-by actor');
