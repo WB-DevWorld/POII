@@ -76,8 +76,19 @@ jobs:
         run: pnpm --filter @poii/web exec playwright install --with-deps chromium
       - name: Core-journey smoke (Playwright)
         run: pnpm --filter @poii/web smoke
-      - uses: actions/upload-artifact@v7
+      # The report lists every action with its argument and its traces hold pages and headers. It is uploaded
+      # only when this scan passes; a scan that fails names the files and rules in this log, and the report stays here.
+      - name: Scan the smoke report before it is uploaded
+        id: smoke_report_scan
         if: failure()
+        run: |
+          if [ -d apps/web/playwright-report ]; then
+            bash infra/scripts/artifact-scan.sh dir apps/web/playwright-report
+          else
+            echo 'No smoke report was written; nothing to scan or upload.'
+          fi
+      - uses: actions/upload-artifact@v7
+        if: failure() && steps.smoke_report_scan.outcome == 'success'
         with:
           name: poii-smoke-report
           path: apps/web/playwright-report/
@@ -118,6 +129,14 @@ jobs:
         run: |
           docker build -f apps/api/Dockerfile -t poii-api:ci .
           docker build -f apps/web/Dockerfile -t poii-web:ci .
+      # Every layer of both images: forbidden names, things a runtime image must not carry, and gitleaks over /app
+      # and the image configuration (infra/scripts/artifact-scan.sh says what it cannot see). Both are always scanned.
+      - name: Scan the built images for secrets and forbidden material
+        run: |
+          status=0
+          bash infra/scripts/artifact-scan.sh image poii-api:ci || status=1
+          bash infra/scripts/artifact-scan.sh image poii-web:ci || status=1
+          exit "$status"
       - name: Built API image answers health
         run: |
           docker network create poii-ci

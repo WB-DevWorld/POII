@@ -6,6 +6,7 @@
 artifacts
 playwright-report
 test-results
+apps/api/test
 .poii-storage
 evidence
 project_sources
