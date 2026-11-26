@@ -2,6 +2,32 @@
 
 Newest entry first. Every entry says what was run and what was not. Mocked work is labelled mocked.
 
+## Several passages on one record, and a conflicting time without a date, in the browser — 2026-11-26 UTC (later)
+
+Continues the entry below.
+
+[#95](https://github.com/WB-DevWorld/POII/pull/95) `e0861c7`, routine, merged by auto-merge at 02:23 UTC: the status page and this ledger after #91 to #94. The catch-up chain deployed it to staging without anyone starting anything (CI, publish, Deploy staging run 45742858339). That is the third commit it has deployed.
+
+[#96](https://github.com/WB-DevWorld/POII/pull/96), routine: the two page gaps the status page listed against the manual journey.
+
+- A candidate can cite several passages of a source at creation ("Keep this span and select another"). A record page has "Cite another passage", which leads to a source page with "Cite a passage for an existing record"; the passage can be in any source. With more than one citation, each can be removed. The pages call `POST /v1/records/:id/evidence` and `DELETE /v1/records/:id/evidence/:evidenceId`, which existed and no page called.
+- A competing time value may be written as `no date`, then a note. It is stored as `value: null`.
+
+Found by this work, both fixed in #96:
+
+- A record with an undated competing value could not be saved from the edit form at all. The form wrote the value back as its note alone and then refused the line. Such a value could only come from the API or the MCP server, so no browser test had met it.
+- Saving times through a form dropped `sourceId` from every competing value, because a line of text cannot carry it. The save now reads the record and keeps the source of each value that is still there.
+
+Still open after it: a page cannot set the source of a competing value, only keep one. Without JavaScript the candidate form takes one span, as before; more are added afterwards from the record. Listed in `docs/release-one-status.md`.
+
+What was run, on the development machine against a fresh database: `pnpm typecheck` and the 52 unit tests in `apps/web`; `next build`; the browser suite at 10 tests with one worker, two of them new. The new forms were looked at in screenshots.
+
+Not run: the API suite (no API file changed) and the sign-in browser run, both left to CI; nothing on staging. No mock was added.
+
+No helper session was used for #96.
+
+Two staging manifests are still not in the repository: the deploys of `1dd0eef` and `e0861c7`. They go in with the next change that needs the owner's approval, as `infra/releases/**` is a gated path.
+
 ## Snapshots repaired, images and reports scanned, the journey in a browser — 2026-11-26 UTC
 
 Continues the entry below.

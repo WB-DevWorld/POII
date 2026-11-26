@@ -1,11 +1,11 @@
 import type { Metadata } from 'next';
-import type { SourceView } from '@poii/contracts';
+import type { RecordDetail, SourceView } from '@poii/contracts';
 import { AiBadge } from '@/components/Badges';
 import { PageNotice } from '@/components/PageNotice';
 import { ProblemNotice } from '@/components/ProblemNotice';
 import { apiTry, query } from '@/lib/api';
 import { formatTime } from '@/lib/format';
-import { first, type SearchParams } from '@/lib/notices';
+import { addToParam, first, type SearchParams } from '@/lib/notices';
 
 export const metadata: Metadata = { title: 'Sources' };
 
@@ -16,7 +16,13 @@ export default async function SourcesPage({ searchParams }: { searchParams: Sear
   const archivedParam = first(params.archived);
   const archived = archivedParam === 'true' || archivedParam === 'all' ? archivedParam : 'false';
   const offset = Math.max(0, Number(first(params.offset) ?? 0) || 0);
-  const result = await apiTry<SourceView[]>(`/v1/sources${query({ archived, limit: PAGE, offset })}`);
+  // `?addTo=<record id>`: the list was opened from a record to choose the source of one more passage.
+  const addTo = addToParam(params.addTo);
+  const [result, target] = await Promise.all([
+    apiTry<SourceView[]>(`/v1/sources${query({ archived, limit: PAGE, offset })}`),
+    addTo ? apiTry<RecordDetail>(`/v1/records/${addTo}`) : null,
+  ]);
+  const picking = target?.ok ? target.data : null;
 
   return (
     <section>
@@ -26,7 +32,13 @@ export default async function SourcesPage({ searchParams }: { searchParams: Sear
       </div>
       <p className="lede">Originals are kept unchanged. A re-import with different content becomes a new revision.</p>
       <PageNotice notice={params.notice} />
+      {picking ? (
+        <p className="notice" role="status" data-testid="picking-source">
+          Choose the source that holds the passage to cite for <a href={`/records/${picking.id}`}>{picking.title}</a>.
+        </p>
+      ) : null}
       <form method="get" className="filters" aria-label="Filter sources">
+        {picking ? <input type="hidden" name="addTo" value={picking.id} /> : null}
         <label htmlFor="archived">Show</label>
         <select id="archived" name="archived" defaultValue={archived}>
           <option value="false">Active sources</option>
@@ -56,7 +68,7 @@ export default async function SourcesPage({ searchParams }: { searchParams: Sear
               {result.data.map(source => (
                 <tr key={source.id}>
                   <td>
-                    <a href={`/sources/${source.id}`}>{source.title}</a>
+                    <a href={picking ? `/sources/${source.id}?addTo=${picking.id}#add-evidence` : `/sources/${source.id}`}>{source.title}</a>
                     {source.archivedAt ? <span className="tag warn">archived</span> : null}
                   </td>
                   <td>{source.kind}</td>
@@ -74,8 +86,8 @@ export default async function SourcesPage({ searchParams }: { searchParams: Sear
       )}
       {result.ok ? (
         <nav className="row pager" aria-label="Pages">
-          {offset > 0 ? <a href={`/sources${query({ archived, offset: Math.max(0, offset - PAGE) })}`}>Previous</a> : null}
-          {result.data.length === PAGE ? <a href={`/sources${query({ archived, offset: offset + PAGE })}`}>Next</a> : null}
+          {offset > 0 ? <a href={`/sources${query({ archived, offset: Math.max(0, offset - PAGE), addTo: picking?.id })}`}>Previous</a> : null}
+          {result.data.length === PAGE ? <a href={`/sources${query({ archived, offset: offset + PAGE, addTo: picking?.id })}`}>Next</a> : null}
         </nav>
       ) : null}
     </section>

@@ -29,7 +29,7 @@ export function describeTime(
       return { text: 'not applicable', tone: 'na', conflicts: [] };
     case 'conflicting': {
       const list = (conflicts ?? []).map(c => {
-        const when = c.value ? formatTime(c.value) : 'no value';
+        const when = c.value ? formatTime(c.value) : NO_DATE;
         return c.note ? `${when} (${c.note})` : when;
       });
       if (value && list.length === 0) list.push(formatTime(value));
@@ -60,13 +60,26 @@ export function inputFromIso(iso: string | null | undefined): string {
   return date.toISOString().slice(0, 16);
 }
 
-/** Parses "one value per line": `2026-03-04 16:02 note…` or `2026-03-04 note…`. Bad lines are reported. */
+/** How a competing value without a date is written and shown: "no date catalogue page". */
+export const NO_DATE = 'no date';
+const UNDATED_LINE = /^(?:no date|undated)\b\s*(?:[-–—:|]\s*)?(.*)$/i;
+
+/**
+ * Parses "one value per line": `2026-03-04 16:02 note…`, `2026-03-04 note…`, or `no date note…` (also
+ * `undated note…`) for a competing value whose source carries no date. Bad lines are reported.
+ */
 export function parseConflictLines(text: string | null | undefined): { conflicts: TimeConflictValue[]; invalid: string[] } {
   const conflicts: TimeConflictValue[] = [];
   const invalid: string[] = [];
   for (const raw of (text ?? '').split(/\r?\n/)) {
     const line = raw.trim();
     if (!line) continue;
+    const undated = UNDATED_LINE.exec(line);
+    if (undated) {
+      const note = (undated[1] ?? '').trim();
+      conflicts.push(note ? { value: null, note: note.slice(0, 500) } : { value: null });
+      continue;
+    }
     const match = /^(\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?)?)\s*(?:[-–—:|]\s*)?(.*)$/.exec(line);
     const iso = match ? isoFromInput(match[1]) : null;
     if (!match || !iso) {
@@ -82,8 +95,28 @@ export function parseConflictLines(text: string | null | undefined): { conflicts
 /** Inverse of parseConflictLines, for prefilling a textarea. */
 export function conflictLines(conflicts: TimeConflictValue[] | null | undefined): string {
   return (conflicts ?? [])
-    .map(c => [c.value ? inputFromIso(c.value).replace('T', ' ') : '', c.note ?? ''].filter(Boolean).join(' '))
+    .map(c => [c.value ? inputFromIso(c.value).replace('T', ' ') : NO_DATE, c.note ?? ''].filter(Boolean).join(' '))
     .join('\n');
+}
+
+const FIELD_TAG = /^(effective|observed)\b:?\s*/;
+
+/**
+ * Saving times through a form rewrites the record's whole list of competing values, and a line of text cannot
+ * carry the source a value came from. This puts `sourceId` back on every value that is still there with the
+ * same time (to the minute, as the form shows it) and the same note.
+ */
+export function keepConflictSources(next: TimeConflictValue[], prior: TimeConflictValue[] | null | undefined): TimeConflictValue[] {
+  const when = (c: TimeConflictValue) => (c.value ? inputFromIso(c.value) : '');
+  const note = (c: TimeConflictValue) => (c.note ?? '').replace(FIELD_TAG, '').trim();
+  const left = (prior ?? []).filter(p => p.sourceId);
+  return next.map(c => {
+    if (c.sourceId) return c;
+    const at = left.findIndex(p => when(p) === when(c) && note(p) === note(c));
+    if (at < 0) return c;
+    const [hit] = left.splice(at, 1);
+    return hit?.sourceId ? { ...c, sourceId: hit.sourceId } : c;
+  });
 }
 
 /**

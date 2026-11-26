@@ -62,10 +62,13 @@ export function TimeInputs({
         id={`${id}-conflicts`}
         name={`${field}Conflicts`}
         className="short"
-        placeholder={'2026-03-04 16:02 chat says\n2026-03-06 ticket says'}
+        placeholder={'2026-03-04 16:02 chat says\n2026-03-06 ticket says\nno date catalogue page'}
         defaultValue={conflictLines(conflictsFor(field, conflicts))}
       />
-      <p className="hint">One per line: date, optional time (UTC), then a note. Only used when the status is conflicting.</p>
+      <p className="hint">
+        One per line: date, optional time (UTC), then a note. For a value whose source carries no date, start the line with
+        &quot;no date&quot;. Only used when the status is conflicting.
+      </p>
     </fieldset>
   );
 }

@@ -11,6 +11,7 @@ import {
   humanize,
   inputFromIso,
   isoFromInput,
+  keepConflictSources,
   parseConflictLines,
 } from '../src/lib/format';
 import { guessMediaType, looksBinary } from '../src/lib/upload';
@@ -33,7 +34,7 @@ test('describeTime keeps unknown, not applicable and conflicting explicit', () =
     { value: null, note: 'ticket has no date' },
   ]);
   assert.equal(conflicting.text, 'conflicting');
-  assert.deepEqual(conflicting.conflicts, ['2026-03-04 00:00 UTC (chat)', '2026-03-06 00:00 UTC', 'no value (ticket has no date)']);
+  assert.deepEqual(conflicting.conflicts, ['2026-03-04 00:00 UTC (chat)', '2026-03-06 00:00 UTC', 'no date (ticket has no date)']);
   assert.equal(describeTime(null, undefined).text, 'unknown');
 });
 
@@ -55,6 +56,48 @@ test('parseConflictLines reads one value per line and reports bad lines', () => 
     { value: '2026-03-06T00:00:00.000Z', note: 'ticket says' },
   ]);
   assert.deepEqual(parsed.invalid, ['last week']);
+});
+
+test('parseConflictLines reads a value without a date, and conflictLines writes it back the same way', () => {
+  const parsed = parseConflictLines('2026-07-08 supplier e-mail\nno date catalogue page\nUndated: scan\nNo date\nnodate x\nundatedly');
+  assert.deepEqual(parsed.conflicts, [
+    { value: '2026-07-08T00:00:00.000Z', note: 'supplier e-mail' },
+    { value: null, note: 'catalogue page' },
+    { value: null, note: 'scan' },
+    { value: null },
+  ]);
+  assert.deepEqual(parsed.invalid, ['nodate x', 'undatedly']);
+  // What the API journey test stores: a note that itself starts with "undated" survives the round trip.
+  const stored = [{ value: '2026-07-08T00:00:00.000Z', note: 'supplier e-mail' }, { value: null, note: 'undated catalogue' }, { value: null }];
+  const lines = conflictLines(stored);
+  assert.equal(lines, '2026-07-08 00:00 supplier e-mail\nno date undated catalogue\nno date');
+  assert.deepEqual(parseConflictLines(lines), { conflicts: stored, invalid: [] });
+});
+
+test('keepConflictSources puts the source back on values that are still there, and only on those', () => {
+  const src = '11111111-1111-4111-8111-111111111111';
+  const other = '22222222-2222-4222-8222-222222222222';
+  const prior = [
+    { value: '2026-07-08T00:00:30.000Z', sourceId: src, note: 'effective: supplier e-mail' },
+    { value: null, sourceId: other, note: 'undated catalogue' },
+    { value: null, note: 'effective: hearsay' },
+  ];
+  const next = [
+    { value: '2026-07-08T00:00:00.000Z', note: 'effective: supplier e-mail' },
+    { value: null, note: 'effective: undated catalogue' },
+    { value: null, note: 'effective: undated catalogue' },
+    { value: '2026-07-09T00:00:00.000Z', note: 'effective: supplier e-mail' },
+    { value: null, note: 'effective: hearsay' },
+  ];
+  assert.deepEqual(keepConflictSources(next, prior), [
+    { value: '2026-07-08T00:00:00.000Z', note: 'effective: supplier e-mail', sourceId: src },
+    { value: null, note: 'effective: undated catalogue', sourceId: other },
+    // One stored source covers one value: a second identical line is a new value without a source.
+    { value: null, note: 'effective: undated catalogue' },
+    { value: '2026-07-09T00:00:00.000Z', note: 'effective: supplier e-mail' },
+    { value: null, note: 'effective: hearsay' },
+  ]);
+  assert.deepEqual(keepConflictSources(next, null), next);
 });
 
 test('conflictsFor separates effective and observed values by note tag', () => {

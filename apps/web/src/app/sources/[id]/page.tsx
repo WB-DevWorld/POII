@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
-import type { ActorView, RecordSummary, RevisionView, SourceDetail } from '@poii/contracts';
+import type { ActorView, RecordDetail, RecordSummary, RevisionView, SourceDetail } from '@poii/contracts';
 import {
+  addEvidenceAction,
   addRevisionAction,
   createRecordAction,
   deleteSourceAction,
@@ -8,13 +9,14 @@ import {
 } from '@/app/actions';
 import { ActionForm, SubmitButton } from '@/components/ActionForm';
 import { AiBadge, Attribution, KindBadge, ReviewBadge, StatusBadge } from '@/components/Badges';
+import { AddEvidenceForm } from '@/components/AddEvidenceForm';
 import { CandidateForm } from '@/components/CandidateForm';
 import { PageNotice } from '@/components/PageNotice';
 import { ProblemNotice } from '@/components/ProblemNotice';
 import { SourceText } from '@/components/SourceText';
-import { apiTry } from '@/lib/api';
+import { apiTry, query } from '@/lib/api';
 import { formatTime } from '@/lib/format';
-import { first, type SearchParams } from '@/lib/notices';
+import { addToParam, first, type SearchParams } from '@/lib/notices';
 import { lineOfOffset, parseSpanParams } from '@/lib/offsets';
 
 export const metadata: Metadata = { title: 'Source' };
@@ -24,11 +26,14 @@ type Params = Promise<{ id: string }>;
 export default async function SourcePage({ params, searchParams }: { params: Params; searchParams: SearchParams }) {
   const { id } = await params;
   const sp = await searchParams;
-  const [detail, citing, actors, confirmed] = await Promise.all([
+  // `?addTo=<record id>`: the page was opened from a record to cite one more passage for it.
+  const addTo = addToParam(sp.addTo);
+  const [detail, citing, actors, confirmed, target] = await Promise.all([
     apiTry<SourceDetail>(`/v1/sources/${encodeURIComponent(id)}`),
     apiTry<RecordSummary[]>(`/v1/sources/${encodeURIComponent(id)}/records`),
     apiTry<ActorView[]>('/v1/actors'),
     apiTry<RecordSummary[]>('/v1/records?reviewState=confirmed&limit=200'),
+    addTo ? apiTry<RecordDetail>(`/v1/records/${addTo}`) : null,
   ]);
 
   if (!detail.ok) {
@@ -115,7 +120,7 @@ export default async function SourcePage({ params, searchParams }: { params: Par
           .map(r => (
             <a
               key={r.id}
-              href={r.id === source.currentRevision.id ? `/sources/${source.id}` : `/sources/${source.id}?revision=${r.id}`}
+              href={`/sources/${source.id}${query({ revision: r.id === source.currentRevision.id ? undefined : r.id, addTo })}`}
               aria-current={r.id === revision.id ? 'page' : undefined}
               title={`${formatTime(r.createdAt)}${r.note ? ` · ${r.note}` : ''}`}
             >
@@ -155,6 +160,24 @@ export default async function SourcePage({ params, searchParams }: { params: Par
           AI-assisted extraction{source.aiAllowed ? '' : ' (unavailable: never send to AI)'}
         </a>
       </p>
+      {target && !target.ok ? (
+        <ProblemNotice problem={target.problem} title="The record to cite this source for could not be loaded." />
+      ) : null}
+      {target?.ok && target.data.reviewState === 'rejected' ? (
+        <p className="notice warn" role="status">
+          <a href={`/records/${target.data.id}`}>{target.data.title}</a> was rejected, so it takes no more evidence.
+        </p>
+      ) : null}
+      {target?.ok && target.data.reviewState !== 'rejected' ? (
+        <AddEvidenceForm
+          action={addEvidenceAction}
+          record={{ id: target.data.id, title: target.data.title, kind: target.data.kind, reviewState: target.data.reviewState }}
+          sourceId={source.id}
+          revisionId={revision.id}
+          content={content}
+          initialSpan={span}
+        />
+      ) : null}
       <CandidateForm
         action={createRecordAction}
         sourceId={source.id}
@@ -182,6 +205,11 @@ export default async function SourcePage({ params, searchParams }: { params: Par
                 <StatusBadge status={r.lifecycleStatus} />
                 <Attribution by={r.statedByDisplayName} role={r.statedRole} mode={r.statementMode} />
               </div>
+              {r.reviewState !== 'rejected' ? (
+                <a className="hint" href={`/sources/${source.id}${query({ revision: isCurrent ? undefined : revision.id, addTo: r.id })}#add-evidence`}>
+                  Cite another passage of this source
+                </a>
+              ) : null}
             </li>
           ))}
         </ul>

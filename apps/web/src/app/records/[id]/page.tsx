@@ -5,6 +5,7 @@ import {
   confirmRecordAction,
   deleteRecordAction,
   rejectRecordAction,
+  removeEvidenceAction,
   setStatusAction,
   updateRecordAction,
 } from '@/app/actions';
@@ -60,6 +61,14 @@ export default async function RecordPage({ params, searchParams }: { params: Par
   const antecedentTitle = (antecedentId: string | null) =>
     antecedentId && record.supersedes?.id === antecedentId ? record.supersedes.title : null;
   const conflicts = record.timeConflicts ?? [];
+  // The API lets a proposer change a candidate's evidence; on a confirmed record it asks for authority.
+  const canChangeEvidence = isCandidate || (isConfirmed && canConfirm);
+  // The sources this record already cites, once each: the likeliest place for the next passage.
+  const citedSources = [
+    ...new Map(
+      record.evidence.filter(e => e.available && e.sourceId).map(e => [e.sourceId as string, e.sourceTitle ?? 'Source'] as const),
+    ),
+  ];
 
   return (
     <section>
@@ -171,9 +180,35 @@ export default async function RecordPage({ params, searchParams }: { params: Par
               </span>
             )}
             {e.available ? <blockquote>{e.locator.excerpt}</blockquote> : null}
+            {canChangeEvidence && record.evidence.length > 1 ? (
+              <ActionForm action={removeEvidenceAction} aria-label="Remove citation" testId="remove-evidence">
+                <input type="hidden" name="recordId" value={record.id} />
+                <input type="hidden" name="evidenceId" value={e.id} />
+                <SubmitButton className="secondary">Remove this citation</SubmitButton>
+              </ActionForm>
+            ) : null}
           </li>
         ))}
       </ul>
+      {canChangeEvidence ? (
+        <div className="card" data-testid="cite-another">
+          <h3>Cite another passage</h3>
+          <p className="hint">
+            A record can cite more than one passage. Open the source that holds it, select the text, and add it to this record.
+            {isConfirmed ? ' The record stays confirmed; the change is kept in its history.' : ''}
+          </p>
+          <ul className="compact">
+            {citedSources.map(([sourceId, title]) => (
+              <li key={sourceId}>
+                <a href={`/sources/${sourceId}?addTo=${record.id}#add-evidence`}>{title}</a>
+              </li>
+            ))}
+            <li>
+              <a href={`/sources?addTo=${record.id}`}>Another source…</a>
+            </li>
+          </ul>
+        </div>
+      ) : null}
 
       <h2>Supersession</h2>
       <dl className="pairs" data-testid="supersession">

@@ -16,7 +16,7 @@ import { lifecycleStatuses, recordKinds, reviewStates, statedRoles, statementMod
 import type { ActionState } from '@/lib/action-state';
 import { apiJson, toProblem, type Problem } from '@/lib/api';
 import { API_LONG_TIMEOUT_MS } from '@/lib/timeouts';
-import { isoFromInput, parseConflictLines, type TimeConflictValue } from '@/lib/format';
+import { isoFromInput, keepConflictSources, parseConflictLines, type TimeConflictValue } from '@/lib/format';
 import { guessMediaType, looksBinary } from '@/lib/upload';
 
 class InputProblem extends Error {
@@ -96,7 +96,11 @@ function timeField(fd: FormData, field: 'effective' | 'observed', conflicts: Tim
   }
   if (status === 'conflicting') {
     const parsed = parseConflictLines(text(fd, `${field}Conflicts`));
-    if (parsed.invalid.length) throw new InputProblem(`${label}: could not read "${parsed.invalid[0]}". Use one "YYYY-MM-DD HH:MM note" per line.`);
+    if (parsed.invalid.length) {
+      throw new InputProblem(
+        `${label}: could not read "${parsed.invalid[0]}". Use one "YYYY-MM-DD HH:MM note" per line, or "no date note" for a value without a date.`,
+      );
+    }
     if (parsed.conflicts.length < 2) throw new InputProblem(`${label} is marked conflicting: list at least two competing values, one per line.`);
     for (const c of parsed.conflicts) conflicts.push({ ...c, note: c.note ? `${field}: ${c.note}` : field });
     return { at: null, status };
@@ -119,6 +123,16 @@ function timesFrom(fd: FormData): TimeFields {
   }
   if (effective || observed) out.timeConflicts = conflicts.length ? conflicts : null;
   return out;
+}
+
+/**
+ * The form's lines cannot carry the source a competing value came from (the API and the MCP server can set
+ * one). When a record that already exists is saved, values that are still there keep their source.
+ */
+async function withConflictSources<T extends TimeFields>(fields: T, recordId: string): Promise<T> {
+  if (!fields.timeConflicts?.length) return fields;
+  const prior = await apiJson<RecordDetail>(`/v1/records/${encodeURIComponent(recordId)}`);
+  return { ...fields, timeConflicts: keepConflictSources(fields.timeConflicts, prior.timeConflicts) };
 }
 
 // ----- sources ----------------------------------------------------------------------------------
@@ -272,7 +286,7 @@ export async function supersedeRecordAction(_state: ActionState, fd: FormData): 
   let record: RecordDetail;
   try {
     const evidence = evidenceFrom(fd);
-    const fields = await recordFieldsFrom(fd);
+    const fields = await withConflictSources(await recordFieldsFrom(fd), oldId);
     record = await apiJson<RecordDetail>(`/v1/records/${oldId}/supersede`, { method: 'POST', body: { ...fields, evidence } });
   } catch (error) {
     return failure(error);
@@ -283,7 +297,7 @@ export async function supersedeRecordAction(_state: ActionState, fd: FormData): 
 export async function updateRecordAction(_state: ActionState, fd: FormData): Promise<ActionState> {
   const id = trimmed(fd, 'recordId');
   try {
-    const body: UpdateRecordRequest = { ...timesFrom(fd) };
+    const body: UpdateRecordRequest = { ...(await withConflictSources(timesFrom(fd), id)) };
     if (fd.has('lifecycleStatus')) body.lifecycleStatus = oneOf(trimmed(fd, 'lifecycleStatus'), lifecycleStatuses, 'lifecycle status');
     if (fd.has('title')) {
       const title = trimmed(fd, 'title');
@@ -307,6 +321,44 @@ export async function updateRecordAction(_state: ActionState, fd: FormData): Pro
     return failure(error);
   }
   redirect(`/records/${id}?notice=edited`);
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Adds one more cited span to a record that already exists (the "cite a passage" form on a source page). */
+export async function addEvidenceAction(_state: ActionState, fd: FormData): Promise<ActionState> {
+  const id = trimmed(fd, 'recordId');
+  try {
+    const sourceId = trimmed(fd, 'sourceId');
+    if (!UUID.test(id) || !UUID.test(sourceId)) throw new InputProblem('Open the source from the record ("Cite another passage") and try again.');
+    const startChar = int(fd, 'startChar', 'Start offset');
+    const endChar = int(fd, 'endChar', 'End offset');
+    if (endChar <= startChar) throw new InputProblem('Select a passage first: the end offset must be after the start offset.');
+    const revisionId = trimmed(fd, 'revisionId');
+    const evidence: EvidenceInput = {
+      sourceId,
+      ...(revisionId ? { revisionId } : {}),
+      startChar,
+      endChar,
+      role: trimmed(fd, 'evidenceRole') === 'supporting' ? 'supporting' : 'primary',
+    };
+    await apiJson(`/v1/records/${encodeURIComponent(id)}/evidence`, { method: 'POST', body: evidence });
+  } catch (error) {
+    return failure(error);
+  }
+  redirect(`/records/${id}?notice=evidence-added`);
+}
+
+export async function removeEvidenceAction(_state: ActionState, fd: FormData): Promise<ActionState> {
+  const id = trimmed(fd, 'recordId');
+  const evidenceId = trimmed(fd, 'evidenceId');
+  if (!UUID.test(id) || !UUID.test(evidenceId)) return invalid('Reload the page and try again.');
+  try {
+    await apiJson(`/v1/records/${encodeURIComponent(id)}/evidence/${encodeURIComponent(evidenceId)}`, { method: 'DELETE' });
+  } catch (error) {
+    return failure(error);
+  }
+  redirect(`/records/${id}?notice=evidence-removed`);
 }
 
 export async function confirmRecordAction(_state: ActionState, fd: FormData): Promise<ActionState> {
