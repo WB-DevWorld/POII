@@ -2,6 +2,23 @@
 
 Newest entry first. Every entry says what was run and what was not. Mocked work is labelled mocked.
 
+## A competing time value names its source in the browser — 2026-11-26 UTC (afternoon)
+
+Continues the entry below.
+
+[#97](https://github.com/WB-DevWorld/POII/pull/97) was approved and merged by the owner at 11:04:43 UTC as `41cd4b1`. The first Publish run with the new step (45807898148) scanned both pushed images and passed: the API image clean, the web image with only the known lines. The two digests it scanned are the two in the staging manifest of that deploy (run 45808262384), so what was scanned is what was deployed. Staging served `41cd4b1` at 11:12 UTC. That manifest is not in the repository yet.
+
+[#98](https://github.com/WB-DevWorld/POII/pull/98), routine: the page gap #96 left open.
+
+- Under "Competing values" a form lists the sources a value can come from, numbered; a line ending with `[1]` names the first. The record page shows each value's source as a link. The edit form writes the numbers back, so a source can be moved or removed.
+- `keepConflictSources` from #96 is gone. It put a source back on a value that still matched, which kept sources but made them impossible to remove in the browser.
+
+Found by this work, not changed: the API stores a competing value's `sourceId` without checking that the source exists in the workspace. Listed in `docs/release-one-status.md` for the owner.
+
+What was run, on the development machine against a fresh database: `pnpm typecheck` and the 53 unit tests in `apps/web`; `next build`; the browser suite at 10 of 10 with one worker. The input and the display were looked at in screenshots.
+
+Not run: the API suite (no API file changed) and the sign-in browser run, both left to CI; nothing on staging. No mock was added. No helper session was used.
+
 ## The pushed images are scanned; three deploys recorded — 2026-11-26 UTC (midday)
 
 Continues the entry below.

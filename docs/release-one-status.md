@@ -1,6 +1,6 @@
 # Release one: where it stands
 
-Written 2026-11-25 against `main` `3f3e68f`; updated the same evening against `4c6e796`, after #80 to #85 merged, that night against `28c5795`, after #86 to #89, on 2026-11-26 against `1dd0eef`, after #91 to #94, and later that day with #96 and #97. Release one is M1 plus M2 (`BUILD-BASELINE.md` §3). This page maps each acceptance criterion of §8 to the evidence that exists today and lists what is still open before the owner can accept release one and before production can be activated. It records evidence; it does not declare anything accepted. Acceptance and the activation phrase are the owner's.
+Written 2026-11-25 against `main` `3f3e68f`; updated the same evening against `4c6e796`, after #80 to #85 merged, that night against `28c5795`, after #86 to #89, on 2026-11-26 against `1dd0eef`, after #91 to #94, and later that day with #96, #97 and #98. Release one is M1 plus M2 (`BUILD-BASELINE.md` §3). This page maps each acceptance criterion of §8 to the evidence that exists today and lists what is still open before the owner can accept release one and before production can be activated. It records evidence; it does not declare anything accepted. Acceptance and the activation phrase are the owner's.
 
 How to read the verdicts: **covered** means an automated test that runs in CI on every pull request proves the claim; **partly** means a named part is not proven by any test; **staging** means it was also observed on the live staging host (`LIVE-ENVIRONMENT-FACTS.md`).
 
@@ -43,7 +43,7 @@ The tests run with AI and peers switched off unless the row says otherwise. Test
 | Gap | Why it matters | Size |
 | --- | --- | --- |
 | The production promotion workflow has never run. `deploy-production.yml` (#85) is on `main`, switched off. | What GitHub does with waiting approvals, the concurrency group and the owner as both actor and reviewer can only be seen on a first real run (ADR-0013). | Depends on the owner's setup; then a dry run. |
-| A page cannot say which source a competing time value comes from. The API and the MCP server can (`timeConflicts[].sourceId`); the pages keep a source that is already there (#96) but offer no way to set one. | A conflicting time entered in the browser names its sources only in the note. | Small, web only. |
+| The API stores the source of a competing time value (`timeConflicts[].sourceId`) as given: it checks the format, not that the source exists in the workspace. The pages (#98) only offer sources the record cites or already names; any other API client can send any id. | A competing value can point at a source that does not exist; the record page then links to a page that says so. | Small, API (`apps/api/src/domain/times.ts` or the records service). The owner decides whether it should be refused. |
 | Intent versus observed: both are shown, nothing marks them as a pair. | The claim's wording is met; a reader has to notice the difference themself. | A product decision before any code. |
 
 ### Not open
@@ -52,7 +52,7 @@ The tests run with AI and peers switched off unless the row says otherwise. Test
 - Staging with continuous deployment (#15): every merge to `main` deploys to staging: those pressed by a person since 2026-11-24, those by auto-merge since #86; twelve release manifests are recorded under `infra/releases/`, one per staging deploy up to `4ea8020` (#97).
 - The page hang seen on staging on 2026-11-25 was the HTTP/3 offer of the server's Traefik, not POII. The staging smoke fails if the offer comes back (#80).
 - Routine changes deploy by themselves: after an auto-merge the catch-up starts CI, the image publish and the staging deploy (#86). Proven on GitHub on 2026-11-25 with #89, about nine minutes from merge to staging (`LIVE-ENVIRONMENT-FACTS.md`, "The first automatic chain after an auto-merge").
-- Several cited passages on one record in the browser, and a conflicting time with a value that has no date (#96). Both are steps of `BUILD-BASELINE.md` §4.1 that worked only through the API until then.
+- Several cited passages on one record in the browser, a conflicting time with a value that has no date (#96), and the source of each competing value, entered and shown (#98). Both are steps of `BUILD-BASELINE.md` §4.1 that worked only through the API until then.
 - The Drizzle snapshots: `drizzle-kit generate` is a no-op again and CI fails when it is not (#92). The SQL migrations and the TypeScript schema were compared and describe the same database.
 - Test material in the API image: seven hand-written mock provider responses were shipped in it until #93 excluded `apps/api/test` from the build context. The image scan found them.
 - The moderate dependency advisories of 2026-11-25 (hono, `@hono/node-server`, esbuild): cleared by #87, which merged by auto-merge on 2026-11-25; none was reachable in POII. `pnpm audit` reports no known vulnerabilities.
