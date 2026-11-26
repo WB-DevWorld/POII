@@ -258,6 +258,12 @@ describe('API invariants (integration)', { skip: skipIntegration }, () => {
     });
     assert.equal(wrong.status, 400);
     assert.equal(wrong.body.error, 'attribution_mismatch', 'pasted assistant text cannot be recorded as the owner\'s statement');
+    const nobody = await c.post('/v1/records', {
+      kind: 'fact', title: 'Assistant recommended RabbitMQ', statementMode: 'pasted', statedRole: 'assistant', statedByActorId: null,
+      evidence: [{ sourceId: src.id, ...span(content, recommendation) }],
+    });
+    assert.equal(nobody.status, 400);
+    assert.equal(nobody.body.error, 'attribution_mismatch', 'role assistant must name which assistant said it');
     const aiExtracted = await c.post('/v1/records', {
       kind: 'fact', title: 'x', statementMode: 'ai_extracted', evidence: [{ sourceId: src.id, ...span(content, recommendation) }],
     });
