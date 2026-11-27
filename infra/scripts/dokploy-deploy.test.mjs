@@ -356,8 +356,18 @@ describe('dokploy-deploy.mjs against a mock Dokploy', () => {
 });
 
 describe('nothing from the Dokploy environment reaches the outputs or the summary', () => {
+  test('short harmless environment values are not redacted, so a deploy time stays a valid date', () => {
+    rememberEnvValue('POII_AI_MONTHLY_CAP_USD_ANTHROPIC', '20');
+    rememberEnvValue('POII_AI_MONTHLY_CAP_USD_OPENAI', '30');
+    rememberEnvValue('POII_AI_ENABLED', 'true');
+    rememberEnvValue('OPENAI_API_KEY', 'fixture-only-openai-key');
+    assert.equal(sanitizeOutputValue('2026-11-27T17:30:00.061Z'), '2026-11-27T17:30:00.061Z');
+    assert.equal(redact('enabled true at 20:30'), 'enabled true at 20:30');
+    assert.equal(redact('key fixture-only-openai-key'), 'key [redacted]');
+  });
+
   test('sanitizeOutputValue keeps one printable line and redacts remembered values', () => {
-    rememberEnvValue('fixture-only-db-password');
+    rememberEnvValue('POSTGRES_PASSWORD', 'fixture-only-db-password');
     assert.equal(sanitizeOutputValue('a\nb=injected\r\nc'), 'a b=injected c');
     assert.equal(sanitizeOutputValue('x fixture-only-db-password y'), 'x [redacted] y');
     assert.equal(redact('the value fixture-only-db-password twice fixture-only-db-password'), 'the value [redacted] twice [redacted]');

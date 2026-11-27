@@ -38,14 +38,16 @@ function fail(message) {
 }
 
 /**
- * Every value found in the Dokploy service environment (other than the three managed keys) is remembered
+ * Every Dokploy service environment value worth hiding (the same rule as masking, `shouldMask`) is remembered
  * here and removed from anything this script writes to the log, the job outputs or the step summary.
  * The summary and outputs of a public repository are public; masking (::add-mask::) only covers the log.
+ * Short harmless values (a cap of `20`, `true`, a port) are not remembered: on 2026-11-27 a value `20` turned
+ * the deploy time `2026-…` into `[redacted]26-…` and the release-manifest step failed.
  */
 const knownEnvValues = new Set();
 
-export function rememberEnvValue(value) {
-  if (typeof value === 'string' && value.trim().length >= 1) knownEnvValues.add(value.trim());
+export function rememberEnvValue(key, value) {
+  if (shouldMask(key, value)) knownEnvValues.add(value.trim());
 }
 
 /** Replaces every remembered environment value in text with [redacted]. Longest values first so partial overlaps cannot leak. */
@@ -268,7 +270,7 @@ export async function main(env = process.env) {
     const parsed = parseEnvLine(line);
     if (parsed && !MANAGED_KEYS.includes(parsed.key)) {
       maskEnvValue(parsed.key, parsed.value);
-      rememberEnvValue(parsed.value);
+      rememberEnvValue(parsed.key, parsed.value);
     }
   }
   if (cfg.expectWebBaseUrl) {
