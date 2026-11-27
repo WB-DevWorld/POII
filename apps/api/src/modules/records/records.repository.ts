@@ -26,21 +26,23 @@ async function actorNames(exec: Exec, ids: Array<string | null>): Promise<Map<st
   return new Map(rows.map(r => [r.id, r.displayName]));
 }
 
-/** For each record id: the confirmed successor if any, otherwise the newest non-rejected successor. */
-async function successors(exec: Exec, ids: string[]): Promise<Map<string, string>> {
+interface Successor { id: string; reviewState: 'candidate' | 'confirmed' }
+
+/** For each record id: the confirmed successor if any, otherwise the newest non-rejected (so candidate) successor. */
+async function successors(exec: Exec, ids: string[]): Promise<Map<string, Successor>> {
   if (!ids.length) return new Map();
   const rows = await exec.select({ id: record.id, supersedes: record.supersedesRecordId, reviewState: record.reviewState })
     .from(record)
     .where(and(inArray(record.supersedesRecordId, ids), ne(record.reviewState, 'rejected')))
     .orderBy(desc(record.recordedAt), desc(record.id));
-  const out = new Map<string, string>();
+  const out = new Map<string, Successor>();
   for (const row of rows) {
     const key = row.supersedes!;
-    if (row.reviewState === 'confirmed' && !out.has(`confirmed:${key}`)) {
-      out.set(key, row.id);
-      out.set(`confirmed:${key}`, row.id);
+    const state = row.reviewState === 'confirmed' ? 'confirmed' : 'candidate';
+    if (state === 'confirmed' && out.get(key)?.reviewState !== 'confirmed') {
+      out.set(key, { id: row.id, reviewState: 'confirmed' });
     } else if (!out.has(key)) {
-      out.set(key, row.id);
+      out.set(key, { id: row.id, reviewState: state });
     }
   }
   return out;
@@ -64,7 +66,8 @@ export async function toSummaries(exec: Exec, rows: RecordRow[]): Promise<Record
     observedAt: iso(r.observedAt),
     observedAtStatus: r.observedAtStatus,
     supersedesRecordId: r.supersedesRecordId,
-    supersededByRecordId: next.get(r.id) ?? null,
+    supersededByRecordId: next.get(r.id)?.id ?? null,
+    supersededByReviewState: next.get(r.id)?.reviewState ?? null,
     aiAllowed: r.aiAllowed,
     versionNo: r.versionNo,
     updatedAt: iso(r.updatedAt),

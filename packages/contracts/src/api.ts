@@ -219,6 +219,9 @@ export const RecordSummary = z.object({
   observedAtStatus: TimeStatus,
   supersedesRecordId: Id.nullable(),
   supersededByRecordId: Id.nullable(),
+  /** Review state of `supersededByRecordId`: only `confirmed` means this record is replaced; `candidate` means a
+   * replacement is waiting for confirmation and this record still counts. Null when there is no successor. */
+  supersededByReviewState: z.enum(['candidate', 'confirmed']).nullable(),
   aiAllowed: z.boolean(),
   versionNo: z.number().int().positive(),
   updatedAt: IsoTime,

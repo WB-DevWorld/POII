@@ -81,6 +81,7 @@ export interface PackRecord {
   };
   supersedesRecordId: string | null;
   supersededByRecordId: string | null;
+  supersededByReviewState: 'candidate' | 'confirmed' | null;
   staleness: CurrentDecision['staleness'];
   evidence: PackEvidence[];
 }
@@ -171,6 +172,7 @@ export function buildContextPack(input: ContextPackInput): ContextPack {
       },
       supersedesRecordId: s.supersedesRecordId,
       supersededByRecordId: s.supersededByRecordId,
+      supersededByReviewState: s.supersededByReviewState,
       staleness: item.staleness,
       evidence,
     });
@@ -263,7 +265,11 @@ export function renderMarkdown(
       out.push(`- Conflicting times: ${r.times.timeConflicts.map(c => `${c.value ?? 'no date'}${c.sourceId ? ` (source ${code(c.sourceId)})` : ''}${c.note ? ` — ${c.note}` : ''}`).join('; ')}`);
     }
     if (r.supersedesRecordId) out.push(`- Supersedes: ${code(r.supersedesRecordId)}`);
-    if (r.supersededByRecordId) out.push(`- Superseded by: ${code(r.supersededByRecordId)}`);
+    if (r.supersededByRecordId) {
+      out.push(r.supersededByReviewState === 'confirmed'
+        ? `- Superseded by: ${code(r.supersededByRecordId)}`
+        : `- Replacement pending (candidate, not confirmed; this record still counts): ${code(r.supersededByRecordId)}`);
+    }
     out.push(`- Staleness: ${r.staleness.label}${r.staleness.lastObservedAt ? ` (last observed ${r.staleness.lastObservedAt})` : ''}`);
     out.push('');
     if (r.body.trim()) out.push(r.body.trim(), '');

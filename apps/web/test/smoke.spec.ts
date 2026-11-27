@@ -150,8 +150,19 @@ test('manual journey: source → candidates → confirm → supersede → curren
   const newId = recordIdFrom(page);
   expect(newId).not.toBe(oldId);
   await expect(page.getByTestId('antecedent-preview')).toContainText(oldTitle);
+  // Until the replacement is confirmed the old decision still counts: the list says "replacement pending", not
+  // "superseded" (staff test, 26 Nov 2026).
+  const oldRow = () => page.getByTestId('records-list').locator('li').filter({ has: page.locator(`a[href="/records/${oldId}"]`) });
+  await page.goto('/records?reviewState=confirmed');
+  await expect(oldRow().locator('.tag', { hasText: 'replacement pending' })).toHaveCount(1);
+  await expect(oldRow().locator('.tag', { hasText: /^superseded$/ })).toHaveCount(0);
+  await page.goto(`/records/${newId}`);
   await submit(page, 'Confirm', /notice=confirmed/);
   await expect(page.getByTestId('approval-summary')).toContainText(`replacing ${oldTitle}`);
+  await page.goto('/records?reviewState=confirmed');
+  await expect(oldRow().locator('.tag', { hasText: /^superseded$/ })).toHaveCount(1);
+  await expect(oldRow().locator('.tag', { hasText: 'replacement pending' })).toHaveCount(0);
+  await page.goto(`/records/${newId}`);
 
   // 5. Current decisions: the new one is current, the old one only appears as replaced.
   await page.goto('/decisions');
