@@ -101,7 +101,7 @@ test('config: AI defaults, caps and validation', () => {
   assert.equal(s.defaultProvider, null);
   assert.equal(s.anthropic.apiKey, null);
   assert.equal(s.anthropic.monthlyCapUsd, 20);
-  assert.equal(s.openai.monthlyCapUsd, 20);
+  assert.equal(s.openai.monthlyCapUsd, 30);
   assert.equal(s.logRequestText, false);
   assert.equal(s.previewTtlSeconds, 900);
   assert.equal(s.maxOutputTokens, 8000);

@@ -20,7 +20,7 @@ These rows were written before staging existed so the first runs only fill in th
 
 | Client or provider | Version | Transport | Read/write | Capture method | Last test date | Result |
 | --- | --- | --- | --- | --- | --- | --- |
-| OpenAI, model `gpt-6.1-sol` (list price USD 2 in / 10 out per MTok, 2x in / 1.5x out above 272,000 input tokens; cap USD 20 per calendar month) | `apps/api/src/adapters/openai.ai-execution.ts` at the deployed digest; Responses API; no SDK, plain `fetch` | HTTPS JSON: `POST https://api.openai.com/v1/responses`, `Authorization: Bearer` header, JSON-schema constrained output | same as the Anthropic row: `preview` reads, `execute` writes candidates, nothing confirmed | same as the Anthropic row; MOCKED coverage today: `openai.responses.ok.json` and `openai.responses.refusal.json` replayed in `apps/api/test/ai.api.test.ts` | pending staging | pending staging |
+| OpenAI, model `gpt-6.1-sol` (list price USD 2 in / 10 out per MTok, 2x in / 1.5x out above 272,000 input tokens; cap USD 30 per calendar month) | `apps/api/src/adapters/openai.ai-execution.ts` at the deployed digest; Responses API; no SDK, plain `fetch` | HTTPS JSON: `POST https://api.openai.com/v1/responses`, `Authorization: Bearer` header, JSON-schema constrained output | same as the Anthropic row: `preview` reads, `execute` writes candidates, nothing confirmed | same as the Anthropic row; MOCKED coverage today: `openai.responses.ok.json` and `openai.responses.refusal.json` replayed in `apps/api/test/ai.api.test.ts` | pending staging | pending staging |
 
 ## Not tested
 

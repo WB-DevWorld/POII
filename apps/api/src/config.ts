@@ -92,7 +92,7 @@ export function aiConfig(env: NodeJS.ProcessEnv = process.env): AiSettings {
     openai: {
       apiKey: key('OPENAI_API_KEY'),
       model: env.POII_AI_OPENAI_MODEL?.trim() || AI_DEFAULT_MODELS.openai,
-      monthlyCapUsd: numberEnv(env, 'POII_AI_MONTHLY_CAP_USD_OPENAI', 20, 0, 100_000, false),
+      monthlyCapUsd: numberEnv(env, 'POII_AI_MONTHLY_CAP_USD_OPENAI', 30, 0, 100_000, false),
     },
     logRequestText: env.POII_AI_LOG_REQUEST_TEXT === 'true',
     previewTtlSeconds: numberEnv(env, 'POII_AI_PREVIEW_TTL_SECONDS', 900, 10, 86_400),

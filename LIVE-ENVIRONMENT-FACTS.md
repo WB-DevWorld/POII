@@ -223,7 +223,7 @@ Defaults in `apps/api/src/config.ts` and list prices in `apps/api/src/ai/pricing
 | Provider | Model | List price, USD per MTok (in / out) | Monthly cap | Endpoint |
 | --- | --- | --- | --- | --- |
 | Anthropic | `claude-opus-5-5` | 4 / 20 | USD 20 | `POST https://api.anthropic.com/v1/messages`, HTTPS JSON |
-| OpenAI | `gpt-6.1-sol` | 2 / 10 (2x / 1.5x above 272,000 input tokens) | USD 20 | `POST https://api.openai.com/v1/responses`, HTTPS JSON |
+| OpenAI | `gpt-6.1-sol` | 2 / 10 (2x / 1.5x above 272,000 input tokens) | USD 30 (raised from 20 by the owner on 2026-11-27) | `POST https://api.openai.com/v1/responses`, HTTPS JSON |
 
 - Owner's local instance, 2026-10-26: `GET /health/ready` on loopback answered `{ "status": "ready", "version": "dev", "aiEnabled": true }`; the instance runs the `local-signin` adapter (`GET /v1/ai/status` without a session is `401 unauthenticated`). The integrating session reports both providers as configured with keys on that instance; the bot did not see the status body and no key value is recorded anywhere.
 - No provider has been called yet from any POII instance. Every provider response in the test suite is a hand-written MOCKED file (`apps/api/test/recorded/`).
