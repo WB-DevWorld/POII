@@ -437,7 +437,8 @@ export type AiPreviewResponse = z.infer<typeof AiPreviewResponse>;
 export const AiExecuteRequest = z.object({ previewId: Id });
 export type AiExecuteRequest = z.infer<typeof AiExecuteRequest>;
 
-export const AiOutcome = z.enum(['ok', 'malformed', 'refused', 'truncated', 'provider_error', 'network_error']);
+/** `out_of_credit`: the provider refused because the account has no API credit or quota left (nothing billed). */
+export const AiOutcome = z.enum(['ok', 'malformed', 'refused', 'truncated', 'provider_error', 'out_of_credit', 'network_error']);
 export type AiOutcome = z.infer<typeof AiOutcome>;
 
 export const AiExecuteResponse = z.object({

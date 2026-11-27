@@ -244,6 +244,39 @@ test('OpenAI client (MOCKED responses): request shape, the prompt is the whole i
   assert.equal(serverError.notBilled, true);
 });
 
+test('OpenAI client (MOCKED responses): no credit left is out_of_credit, an ordinary 429 is a rate limit; neither is retried', async () => {
+  const stub = stubFetch();
+  const client = new OpenAiAiExecution({ apiKey: FAKE_KEY, model: 'gpt-6.1-sol', fetch: stub.fetch });
+
+  stub.enqueue(recorded('openai.error.credit_balance_exhausted.json'));
+  const exhausted = await client.extract('p', opts);
+  assert.equal(stub.calls.length, 1, 'one request, no retry');
+  assert.equal(exhausted.outcome, 'out_of_credit');
+  assert.equal(exhausted.httpStatus, 429);
+  assert.equal(exhausted.notBilled, true, 'nothing generated: the reservation is released');
+  assert.deepEqual(exhausted.candidates, []);
+  assert.match(exhausted.errors[0]!, /no API credit left/);
+  assert.match(exhausted.errors[0]!, /credit_balance_exhausted/);
+  assert.match(exhausted.errors[0]!, /manual path/);
+
+  stub.enqueue({ _mocked: 'MOCKED: OpenAI 429 insufficient_quota, the shape seen live on 2026-10-26', status: 429,
+    body: { error: { message: 'You exceeded your current quota, please check your plan and billing details.', type: 'insufficient_quota', param: null, code: 'insufficient_quota' } } });
+  const noQuota = await client.extract('p', opts);
+  assert.equal(stub.calls.length, 2, 'no retry');
+  assert.equal(noQuota.outcome, 'out_of_credit');
+  assert.equal(noQuota.notBilled, true);
+
+  stub.enqueue(recorded('openai.error.rate_limit.json'));
+  const limited = await client.extract('p', opts);
+  assert.equal(stub.calls.length, 3, 'no retry inside the client');
+  assert.equal(limited.outcome, 'provider_error', 'a rate limit is not out of credit');
+  assert.equal(limited.notBilled, true);
+  assert.match(limited.errors[0]!, /limiting the request rate/);
+  assert.match(limited.errors[0]!, /rate_limit_exceeded/);
+  assert.doesNotMatch(limited.errors[0]!, /credit/);
+  assert.equal(stub.pending(), 0);
+});
+
 test('spans never split a UTF-16 surrogate pair', () => {
   const text = 'a😀b';
   assert.equal(splitsSurrogatePair(text, 0), false);

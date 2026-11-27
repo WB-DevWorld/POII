@@ -187,6 +187,44 @@ describe('AI-assisted extraction (integration, MOCKED provider responses)', { sk
     assert.equal(ex.usage.costUsd, (1702 * 2 + 980 * 10) / 1e6);
   });
 
+  test('OpenAI out of credit (MOCKED 429 credit_balance_exhausted): one request, nothing charged, the manual path and a later send still work', async () => {
+    const content = fixture('decision-chain', `${run}-credit`);
+    const src = await paste(`AI credit ${run}`, content);
+    const s = span(content, NATS);
+    const usageBefore = AiUsageResponse.parse((await c.get('/v1/ai/usage')).body).providers.find(x => x.provider === 'openai')!;
+    const calls = stub.calls.length;
+
+    const pv = AiPreviewResponse.parse((await preview({ sourceId: src.id, provider: 'openai', startChar: s.startChar, endChar: s.endChar })).body);
+    stub.enqueue(recorded('openai.error.credit_balance_exhausted.json'));
+    const r = await c.post('/v1/ai/execute', { previewId: pv.previewId });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const ex = AiExecuteResponse.parse(r.body);
+    assert.equal(ex.outcome, 'out_of_credit');
+    assert.deepEqual(ex.records, []);
+    assert.match(ex.errors.join(' '), /no API credit left/);
+    assert.equal(ex.usage.costUsd, 0);
+    assert.equal(stub.calls.length, calls + 1, 'exactly one provider request, no retry');
+
+    const usageAfter = AiUsageResponse.parse((await c.get('/v1/ai/usage')).body).providers.find(x => x.provider === 'openai')!;
+    assert.equal(usageAfter.remainingUsd, usageBefore.remainingUsd, 'the reservation was released');
+    assert.equal(usageAfter.reservedUsd, 0);
+    const ledger = (await api.db.pool.query('SELECT state, actual_micro_usd, outcome FROM ai_usage WHERE preview_id = $1', [pv.previewId])).rows;
+    assert.deepEqual(ledger, [{ state: 'settled', actual_micro_usd: '0', outcome: 'out_of_credit' }]);
+
+    // The manual path: a person records the same span by hand.
+    const manual = await c.post('/v1/records', {
+      kind: 'decision', title: `NATS from release two ${run}`, statementMode: 'quoted', statedRole: 'owner',
+      evidence: [{ sourceId: src.id, ...s }],
+    });
+    assert.equal(manual.status, 201, JSON.stringify(manual.body));
+
+    // Once credit is back, a new preview sends normally.
+    const next = AiPreviewResponse.parse((await preview({ sourceId: src.id, provider: 'openai', startChar: s.startChar, endChar: s.endChar })).body);
+    stub.enqueue(recorded('openai.responses.ok.json'));
+    const ok = AiExecuteResponse.parse((await c.post('/v1/ai/execute', { previewId: next.previewId })).body);
+    assert.equal(ok.outcome, 'ok');
+  });
+
   test('a never-send source is refused before anything is built or sent, at preview and at execute', async () => {
     const calls = stub.calls.length;
     const built = constructed.length;

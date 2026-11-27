@@ -50,6 +50,13 @@ export function AiSendForm({ previewId, sourceId, providerLabel, startChar, endC
             ))}
           </ul>
         ) : null}
+        {result.outcome === 'out_of_credit' ? (
+          <p className="notice warn" role="status" data-testid="ai-out-of-credit">
+            <strong>The AI provider has no credit left, so no candidates were created and nothing was charged.</strong>{' '}
+            <a href={manualPathHref(sourceId, startChar, endChar)}>Use the manual path for this span</a>: select the text and create the
+            candidate yourself. AI extraction works again once the provider account has credit.
+          </p>
+        ) : null}
         {result.errors.length ? (
           <div className="notice warn" role="status">
             <strong>{result.outcome === 'ok' ? 'Some proposals were dropped:' : `The provider answer could not be used (${result.outcome}).`}</strong>
