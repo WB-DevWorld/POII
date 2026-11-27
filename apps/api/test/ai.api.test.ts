@@ -80,12 +80,12 @@ describe('AI-assisted extraction (integration, MOCKED provider responses)', { sk
     assert.equal(s.enabled, true);
     assert.equal(s.defaultProvider, 'anthropic');
     assert.deepEqual(s.providers.map(p => [p.provider, p.configured, p.model, p.monthlyCapUsd]), [
-      ['anthropic', true, 'claude-opus-5-5', 20], ['openai', true, 'gpt-6.1-sol', 20],
+      ['anthropic', true, 'claude-opus-5-5', 20], ['openai', true, 'gpt-6.1-sol', 30],
     ]);
     assert.ok(!JSON.stringify(status.body).includes(FAKE_KEY));
     const usage = AiUsageResponse.parse((await c.get('/v1/ai/usage')).body);
     assert.equal(usage.month, new Date().toISOString().slice(0, 7));
-    assert.deepEqual(usage.providers.map(p => [p.provider, p.spentUsd, p.reservedUsd, p.remainingUsd]), [['anthropic', 0, 0, 20], ['openai', 0, 0, 20]]);
+    assert.deepEqual(usage.providers.map(p => [p.provider, p.spentUsd, p.reservedUsd, p.remainingUsd]), [['anthropic', 0, 0, 20], ['openai', 0, 0, 30]]);
     const me = await c.get('/v1/me');
     assert.equal(me.body.aiEnabled, true);
   });
@@ -384,9 +384,9 @@ describe('AI-assisted extraction (integration, MOCKED provider responses)', { sk
     const content = `Cap probe ${run}: Decision: use the manual path at the cap.`;
     const src = await paste(`Cap ${run}`, content);
     const pv = AiPreviewResponse.parse((await preview({ sourceId: src.id, provider: 'openai' })).body);
-    // The month's OpenAI spend reaches its USD 20 cap.
+    // The month's OpenAI spend reaches its USD 30 cap.
     await api.db.pool.query(`INSERT INTO ai_usage (id, workspace_id, provider, model, month, preview_id, prompt_sha256, state, reserved_micro_usd, actual_micro_usd)
-      SELECT gen_random_uuid(), id, 'openai', 'gpt-6.1-sol', $1, gen_random_uuid(), 'x', 'settled', 20000000, 20000000 - $2::bigint FROM workspace LIMIT 1`,
+      SELECT gen_random_uuid(), id, 'openai', 'gpt-6.1-sol', $1, gen_random_uuid(), 'x', 'settled', 30000000, 30000000 - $2::bigint FROM workspace LIMIT 1`,
     [new Date().toISOString().slice(0, 7), Math.round(((1702 * 2 + 980 * 10) / 1e6) * 1e6)]);
     const built = constructed.length;
     const calls = stub.calls.length;
