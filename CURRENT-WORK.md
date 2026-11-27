@@ -2,6 +2,20 @@
 
 Newest entry first. Every entry says what was run and what was not. Mocked work is labelled mocked.
 
+## Plain words for people, exact codes for agents (ADR-0014) — 2026-11-27 UTC
+
+The owner said POII's wording was not yet good enough and that AI agents read POII too, so it must not be simplified in a way that hurts their work. ADR-0014 settles this with two layers: the codes in `packages/contracts` stay the contract for the API, MCP, exports and agents, and each code has exactly one plain label for people.
+
+- [#108](https://github.com/WB-DevWorld/POII/pull/108) `ac48495`, routine, merged by auto-merge at 17:23 UTC. Web screens use plain labels from `apps/web/src/lib/labels.ts`, and each badge keeps its code in `data-code` and its tooltip. Record pages get "Technical details". The PR adds a `/glossary` page and `docs/glossary.md`. Run locally before the PR: web unit tests 58/58 and browser suite 12/12 (local-owner identity). The sign-in browser suite ran in CI only.
+- [#109](https://github.com/WB-DevWorld/POII/pull/109) `2bf9de6`, approved by the owner on GitHub as code owner of `docs/adr/` and merged by auto-merge at 17:36 UTC: `docs/adr/0014-language-and-screens.md`.
+- [#110](https://github.com/WB-DevWorld/POII/pull/110) `9acca17`, gated (export format). The owner wrote in chat on 2026-11-27: "POII GATED APPROVED: PR #110". They approved and merged it on GitHub at 18:05 UTC. Context pack Markdown and `AGENTS.md`/`CLAUDE.md` add plain words next to the codes; existing lines, citations and the JSON pack are unchanged, and the format stays `poii.context-pack` v1. The `AGENTS.md` body hash changes once. Run locally before the PR: API tests 185/185 on a fresh database. The MCP tests were not run locally, because they report 0 tests without a running API.
+
+Not done yet, and gated:
+- the wording of the sign-in, tokens, account and AI extraction pages;
+- a contract change that shows a confirmation as out of date when its quoted passage moved or was lost.
+
+Not checked: the new screens on a real phone, and a context pack exported on staging after #110.
+
 ## A competing time value names its source in the browser — 2026-11-26 UTC (afternoon)
 
 Continues the entry below.
