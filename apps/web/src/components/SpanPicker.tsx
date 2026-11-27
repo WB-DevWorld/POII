@@ -157,7 +157,7 @@ export function SpanFields({
       <legend>{legend}</legend>
       <div className="inline-fields">
         <div>
-          <label htmlFor={`${idPrefix}-start`}>Start offset</label>
+          <label htmlFor={`${idPrefix}-start`}>Start position</label>
           <input
             id={`${idPrefix}-start`}
             name="startChar"
@@ -169,7 +169,7 @@ export function SpanFields({
           />
         </div>
         <div>
-          <label htmlFor={`${idPrefix}-end`}>End offset</label>
+          <label htmlFor={`${idPrefix}-end`}>End position</label>
           <input
             id={`${idPrefix}-end`}
             name="endChar"
@@ -181,15 +181,15 @@ export function SpanFields({
           />
         </div>
         <div>
-          <label htmlFor={`${idPrefix}-evrole`}>Evidence role</label>
+          <label htmlFor={`${idPrefix}-evrole`}>Kind of evidence</label>
           <select
             id={`${idPrefix}-evrole`}
             name="evidenceRole"
             value={role}
             onChange={e => setRole(e.target.value === 'supporting' ? 'supporting' : 'primary')}
           >
-            <option value="primary">primary</option>
-            <option value="supporting">supporting</option>
+            <option value="primary">Main evidence</option>
+            <option value="supporting">Supporting</option>
           </select>
         </div>
       </div>
@@ -201,7 +201,7 @@ export function SpanFields({
               <blockquote>{excerpt.length > 600 ? `${excerpt.slice(0, 600)}…` : excerpt}</blockquote>
             </>
           ) : (
-            <span className="hint">No span selected yet.</span>
+            <span className="hint">No passage selected yet.</span>
           )}
         </div>
       ) : null}

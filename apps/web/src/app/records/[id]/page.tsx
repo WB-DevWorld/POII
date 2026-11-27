@@ -10,12 +10,23 @@ import {
   updateRecordAction,
 } from '@/app/actions';
 import { ActionForm, SubmitButton } from '@/components/ActionForm';
-import { AiBadge, AnchorBadge, KindBadge, ReviewBadge, StatusBadge, TimeValue } from '@/components/Badges';
+import { AiBadge, AnchorBadge, CodeTag, KindBadge, ReviewBadge, StatusBadge, TimeValue } from '@/components/Badges';
 import { PageNotice } from '@/components/PageNotice';
 import { ProblemNotice } from '@/components/ProblemNotice';
 import { RecordFields, TimeInputs } from '@/components/RecordFields';
 import { apiTry } from '@/lib/api';
-import { conflictSourceList, conflictsFor, formatTime, humanize, inputFromIso } from '@/lib/format';
+import { conflictSourceList, conflictsFor, formatTime, inputFromIso } from '@/lib/format';
+import {
+  authorityTerms,
+  changeKindTerms,
+  codeTitle,
+  evidenceRoleTerms,
+  labelOf,
+  lifecycleStatusTerms,
+  statedRoleTerms,
+  statementModeTerms,
+  timeStatusTerms,
+} from '@/lib/labels';
 import type { SearchParams } from '@/lib/notices';
 import { spanHref } from '@/lib/offsets';
 
@@ -82,7 +93,11 @@ export default async function RecordPage({ params, searchParams }: { params: Par
         <KindBadge kind={record.kind} />
         <ReviewBadge state={record.reviewState} />
         <StatusBadge status={record.lifecycleStatus} />
-        {record.supersededBy.length ? <span className="tag warn">superseded</span> : null}
+        {record.supersededBy.some(s => s.reviewState === 'confirmed') ? (
+          <span className="tag warn" data-code="superseded" title="A confirmed record replaced this one">replaced</span>
+        ) : record.supersededBy.length ? (
+          <span className="tag" data-code="replacement_pending" title="A replacement is awaiting review">replacement awaiting review</span>
+        ) : null}
         <AiBadge allowed={record.aiAllowed} />
         <span className="hint">version {record.versionNo}</span>
       </p>
@@ -97,24 +112,28 @@ export default async function RecordPage({ params, searchParams }: { params: Par
 
       <div className="grid-2 side-by-side">
         <div className="card" data-testid="attribution-block">
-          <h2>Attribution</h2>
-          <p className="hint">Who said it. This is not approval.</p>
+          <h2>Who said it</h2>
+          <p className="hint">Where the statement came from. Saying something is not confirming it.</p>
           <dl className="pairs">
-            <dt>Stated by</dt>
-            <dd>{record.statedByDisplayName ?? <span className="tag warn">unknown</span>}</dd>
-            <dt>Role</dt>
-            <dd>{humanize(record.statedRole)}</dd>
-            <dt>Mode</dt>
-            <dd>{humanize(record.statementMode)}</dd>
+            <dt>Said by</dt>
+            <dd>{record.statedByDisplayName ?? <span className="tag warn" data-code="unknown">not recorded</span>}</dd>
+            <dt>In the role of</dt>
+            <dd>
+              <CodeTag terms={statedRoleTerms} code={record.statedRole} testId="stated-role" />
+            </dd>
+            <dt>How it was captured</dt>
+            <dd>
+              <CodeTag terms={statementModeTerms} code={record.statementMode} testId="statement-mode" />
+            </dd>
           </dl>
         </div>
         <div className="card" data-testid="approval-block">
-          <h2>Approval</h2>
-          <p className="hint">Who confirmed it, with what authority, replacing what.</p>
+          <h2>Who confirmed it</h2>
+          <p className="hint">Who confirmed it, with what authority, and which earlier record it replaced.</p>
           {record.approvals.length === 0 ? (
             <p data-testid="approval-summary">
-              <strong>Not approved.</strong>{' '}
-              {isCandidate ? 'This is a candidate until a person with authority confirms it.' : null}
+              <strong>Not confirmed.</strong>{' '}
+              {isCandidate ? 'It is awaiting review until a person with authority confirms it. Exports and agents treat it as unconfirmed.' : null}
             </p>
           ) : (
             <ul className="plain">
@@ -122,7 +141,8 @@ export default async function RecordPage({ params, searchParams }: { params: Par
                 const replacedTitle = antecedentTitle(a.antecedentRecordId);
                 return (
                   <li key={a.id} data-testid="approval-summary">
-                    Approved by <strong>{a.approvedByDisplayName}</strong> with authority <strong>{a.authority}</strong> at{' '}
+                    Confirmed by <strong>{a.approvedByDisplayName}</strong> with{' '}
+                    <strong data-code={a.authority} title={codeTitle(authorityTerms, a.authority)}>{labelOf(authorityTerms, a.authority)}</strong> authority at{' '}
                     <time dateTime={a.approvedAt}>{formatTime(a.approvedAt)}</time>
                     {a.antecedentRecordId ? (
                       <>
@@ -130,7 +150,7 @@ export default async function RecordPage({ params, searchParams }: { params: Par
                         <a href={`/records/${a.antecedentRecordId}`}>{replacedTitle ?? `record …${shortId(a.antecedentRecordId)}`}</a>
                       </>
                     ) : (
-                      ', replacing nothing'
+                      ', replacing no earlier record'
                     )}
                     .{a.note ? <div className="hint">Note: {a.note}</div> : null}
                   </li>
@@ -144,17 +164,17 @@ export default async function RecordPage({ params, searchParams }: { params: Par
       <h2>Times</h2>
       <dl className="meta">
         <div>
-          <dt>Recorded</dt>
+          <dt>Saved in POII</dt>
           <dd>{formatTime(record.recordedAt)}</dd>
         </div>
         <div>
-          <dt>Effective</dt>
+          <dt>True from (effective)</dt>
           <dd data-testid="time-effective">
             <TimeValue value={record.effectiveAt} status={record.effectiveAtStatus} conflicts={conflictsFor('effective', conflicts)} sources={timeSources} />
           </dd>
         </div>
         <div>
-          <dt>Observed</dt>
+          <dt>Seen in practice (observed)</dt>
           <dd data-testid="time-observed">
             <TimeValue value={record.observedAt} status={record.observedAtStatus} conflicts={conflictsFor('observed', conflicts)} sources={timeSources} />
           </dd>
@@ -166,9 +186,9 @@ export default async function RecordPage({ params, searchParams }: { params: Par
         {record.evidence.map(e => (
           <li key={e.id} className={e.available ? '' : 'unavailable'}>
             <div className="row tags">
-              <span className="tag">{e.role}</span>
+              <CodeTag terms={evidenceRoleTerms} code={e.role} testId="evidence-role" />
               <AnchorBadge result={e.anchorResult} />
-              {e.available ? <span className="tag ok">available</span> : <span className="tag danger">unavailable</span>}
+              {e.available ? null : <span className="tag danger" data-code="unavailable">source deleted</span>}
               {e.sourceAiAllowed === false ? <AiBadge allowed={false} /> : null}
             </div>
             {e.available && e.sourceId ? (
@@ -177,7 +197,7 @@ export default async function RecordPage({ params, searchParams }: { params: Par
               </a>
             ) : (
               <span>
-                {e.sourceTitle ?? 'Source'} is unavailable (deleted). Original source id{' '}
+                {e.sourceTitle ?? 'The source'} was deleted, so this passage can no longer be shown. Original source id{' '}
                 <span className="mono">{e.originalSourceId}</span>.
               </span>
             )}
@@ -186,7 +206,7 @@ export default async function RecordPage({ params, searchParams }: { params: Par
               <ActionForm action={removeEvidenceAction} aria-label="Remove citation" testId="remove-evidence">
                 <input type="hidden" name="recordId" value={record.id} />
                 <input type="hidden" name="evidenceId" value={e.id} />
-                <SubmitButton className="secondary">Remove this citation</SubmitButton>
+                <SubmitButton className="secondary">Remove this passage</SubmitButton>
               </ActionForm>
             ) : null}
           </li>
@@ -196,7 +216,7 @@ export default async function RecordPage({ params, searchParams }: { params: Par
         <div className="card" data-testid="cite-another">
           <h3>Cite another passage</h3>
           <p className="hint">
-            A record can cite more than one passage. Open the source that holds it, select the text, and add it to this record.
+            A record can quote more than one passage. Open the source that holds it, select the text, and add it to this record.
             {isConfirmed ? ' The record stays confirmed; the change is kept in its history.' : ''}
           </p>
           <ul className="compact">
@@ -212,19 +232,19 @@ export default async function RecordPage({ params, searchParams }: { params: Par
         </div>
       ) : null}
 
-      <h2>Supersession</h2>
+      <h2>Replacements</h2>
       <dl className="pairs" data-testid="supersession">
-        <dt>Supersedes</dt>
+        <dt>Replaces</dt>
         <dd>
           {record.supersedes ? (
             <>
               <a href={`/records/${record.supersedes.id}`}>{record.supersedes.title}</a> <ReviewBadge state={record.supersedes.reviewState} />
             </>
           ) : (
-            'nothing'
+            'no earlier record'
           )}
         </dd>
-        <dt>Superseded by</dt>
+        <dt>Replaced by</dt>
         <dd>
           {record.supersededBy.length ? (
             <ol className="compact">
@@ -235,13 +255,13 @@ export default async function RecordPage({ params, searchParams }: { params: Par
               ))}
             </ol>
           ) : (
-            'nothing confirmed'
+            'nothing yet'
           )}
         </dd>
       </dl>
 
       <h2>Actions</h2>
-      {!me.ok ? <ProblemNotice problem={me.problem} title="Your capabilities could not be loaded." /> : null}
+      {!me.ok ? <ProblemNotice problem={me.problem} title="POII could not check what you are allowed to do." /> : null}
       <div className="grid-2">
         {isCandidate && canConfirm ? (
           <div className="card">
@@ -249,16 +269,16 @@ export default async function RecordPage({ params, searchParams }: { params: Par
             <p data-testid="antecedent-preview">
               {record.supersedes ? (
                 <>
-                  The approval will record that this replaces <a href={`/records/${record.supersedes.id}`}>{record.supersedes.title}</a>.
+                  Confirming records that this replaces <a href={`/records/${record.supersedes.id}`}>{record.supersedes.title}</a>, which then stops being current.
                 </>
               ) : (
-                'The approval will replace nothing (no antecedent).'
+                'Confirming replaces no earlier record.'
               )}
             </p>
             {me.ok ? (
               <p className="hint">
                 You confirm as {me.data.actor.displayName}
-                {me.data.actor.authority ? ` with authority ${me.data.actor.authority}` : ''}.
+                {me.data.actor.authority ? ` with ${labelOf(authorityTerms, me.data.actor.authority)} authority` : ''}. Your name and the time are recorded.
               </p>
             ) : null}
             <ActionForm action={confirmRecordAction} aria-label="Confirm record">
@@ -272,6 +292,7 @@ export default async function RecordPage({ params, searchParams }: { params: Par
         {isCandidate && canConfirm ? (
           <div className="card">
             <h3>Reject</h3>
+            <p className="hint">The record is kept for history with your reason. It cannot be confirmed afterwards.</p>
             <ActionForm action={rejectRecordAction} aria-label="Reject record">
               <input type="hidden" name="recordId" value={record.id} />
               <label htmlFor="reject-reason">Reason</label>
@@ -282,43 +303,44 @@ export default async function RecordPage({ params, searchParams }: { params: Par
         ) : null}
         {record.reviewState !== 'rejected' ? (
           <div className="card">
-            <h3>Set lifecycle status</h3>
-            <ActionForm action={setStatusAction} aria-label="Set status">
+            <h3>Change stage</h3>
+            <p className="hint">Where it stands now. Allowed on confirmed records too; the change is kept in the history.</p>
+            <ActionForm action={setStatusAction} aria-label="Change stage">
               <input type="hidden" name="recordId" value={record.id} />
-              <label htmlFor="status-status">Status</label>
+              <label htmlFor="status-status">Stage</label>
               <select id="status-status" name="lifecycleStatus" defaultValue={record.lifecycleStatus}>
                 {lifecycleStatuses.map(s => (
-                  <option key={s} value={s}>{s}</option>
+                  <option key={s} value={s}>{labelOf(lifecycleStatusTerms, s)}</option>
                 ))}
               </select>
               <div className="inline-fields">
                 <div>
-                  <label htmlFor="status-obs-status">Observed time status</label>
+                  <label htmlFor="status-obs-status">Time seen in practice</label>
                   <select id="status-obs-status" name="observedAtStatus" defaultValue={record.observedAtStatus === 'conflicting' ? 'unknown' : record.observedAtStatus}>
-                    <option value="known">known</option>
-                    <option value="unknown">unknown</option>
-                    <option value="not_applicable">not applicable</option>
+                    <option value="known">{labelOf(timeStatusTerms, 'known')}</option>
+                    <option value="unknown">{labelOf(timeStatusTerms, 'unknown')}</option>
+                    <option value="not_applicable">{labelOf(timeStatusTerms, 'not_applicable')}</option>
                   </select>
                 </div>
                 <div>
-                  <label htmlFor="status-obs-at">Observed at (UTC)</label>
+                  <label htmlFor="status-obs-at">Seen at (UTC), if known</label>
                   <input id="status-obs-at" name="observedAt" type="datetime-local" defaultValue={inputFromIso(record.observedAt)} />
                 </div>
               </div>
               <label htmlFor="status-note">Note (optional)</label>
               <input id="status-note" name="note" maxLength={2000} />
-              <SubmitButton className="secondary">Set status</SubmitButton>
+              <SubmitButton className="secondary">Set stage</SubmitButton>
             </ActionForm>
           </div>
         ) : null}
         {record.reviewState !== 'rejected' ? (
           <div className="card">
-            <h3>Supersede</h3>
+            <h3>Replace with a new version</h3>
             <p className="hint">
-              Start a new candidate with the same evidence that replaces this record once confirmed. Until then this record stays as
-              it is.
+              Write a new record, starting from this one&apos;s evidence. It is saved for review, and once confirmed it replaces this
+              record. Until then this record stays current, unchanged.
             </p>
-            <a className="button secondary" href={`/records/${record.id}/supersede`}>Supersede…</a>
+            <a className="button secondary" href={`/records/${record.id}/supersede`}>Write a replacement…</a>
           </div>
         ) : null}
       </div>
@@ -327,22 +349,22 @@ export default async function RecordPage({ params, searchParams }: { params: Par
         <details className="card edit" open={false}>
           <summary>
             <strong>Edit</strong>
-            {isConfirmed ? ' (status and times only)' : ''}
+            {isConfirmed ? ' (stage and times only)' : ''}
           </summary>
           {isConfirmed ? (
             <p className="hint">
-              A confirmed record keeps its title, body, kind and attribution so its approval stays meaningful. To change those,
-              supersede it. Lifecycle status and times can still change.
+              A confirmed record keeps its title, text, kind and who said it, so the confirmation still means what was confirmed.
+              To change those, replace it with a new version. Its stage and times can still change.
             </p>
           ) : null}
           <ActionForm action={updateRecordAction} aria-label="Edit record">
             <input type="hidden" name="recordId" value={record.id} />
             {isConfirmed ? (
               <>
-                <label htmlFor="edit-status">Lifecycle status</label>
+                <label htmlFor="edit-status">Stage</label>
                 <select id="edit-status" name="lifecycleStatus" defaultValue={record.lifecycleStatus}>
                   {lifecycleStatuses.map(s => (
-                    <option key={s} value={s}>{s}</option>
+                    <option key={s} value={s}>{labelOf(lifecycleStatusTerms, s)}</option>
                   ))}
                 </select>
                 <TimeInputs field="effective" idPrefix="edit" status={record.effectiveAtStatus} value={record.effectiveAt} conflicts={conflicts} sources={timeSources} />
@@ -357,6 +379,37 @@ export default async function RecordPage({ params, searchParams }: { params: Par
           </ActionForm>
         </details>
       ) : null}
+
+      <details className="card" data-testid="technical-details">
+        <summary>Technical details (codes used by the API, exports and agents)</summary>
+        <dl className="pairs mono">
+          <dt>id</dt>
+          <dd>{record.id}</dd>
+          <dt>kind</dt>
+          <dd>{record.kind}</dd>
+          <dt>reviewState</dt>
+          <dd>{record.reviewState}</dd>
+          <dt>lifecycleStatus</dt>
+          <dd>{record.lifecycleStatus}</dd>
+          <dt>statedRole</dt>
+          <dd>{record.statedRole}</dd>
+          <dt>statementMode</dt>
+          <dd>{record.statementMode}</dd>
+          <dt>effectiveAtStatus</dt>
+          <dd>{record.effectiveAtStatus}</dd>
+          <dt>observedAtStatus</dt>
+          <dd>{record.observedAtStatus}</dd>
+          <dt>aiAllowed</dt>
+          <dd>{String(record.aiAllowed)}</dd>
+          <dt>supersedesRecordId</dt>
+          <dd>{record.supersedes?.id ?? 'null'}</dd>
+          <dt>versionNo</dt>
+          <dd>{record.versionNo}</dd>
+        </dl>
+        <p className="hint">
+          What each code means is in the <a href="/glossary">glossary</a>.
+        </p>
+      </details>
 
       <h2>History</h2>
       <div className="table-wrap">
@@ -377,13 +430,13 @@ export default async function RecordPage({ params, searchParams }: { params: Par
               .map(v => (
                 <tr key={v.versionNo}>
                   <td>{v.versionNo}</td>
-                  <td>{v.changeKind}</td>
+                  <td data-code={v.changeKind} title={codeTitle(changeKindTerms, v.changeKind)}>{labelOf(changeKindTerms, v.changeKind)}</td>
                   <td>{v.changedByDisplayName}</td>
                   <td className="nowrap">{formatTime(v.changedAt)}</td>
                   <td>
                     {v.note ?? ''}
                     <details>
-                      <summary className="hint">snapshot</summary>
+                      <summary className="hint">full data of this version</summary>
                       <pre className="snapshot">{JSON.stringify(v.snapshot, null, 2)}</pre>
                     </details>
                   </td>
@@ -399,8 +452,8 @@ export default async function RecordPage({ params, searchParams }: { params: Par
             <strong>Delete this record</strong>
           </summary>
           <p className="hint">
-            The record and its evidence links are removed. Deletion is refused while a confirmed successor names it as the record
-            it replaced.
+            The record and its links to evidence are removed for good; this cannot be undone. The sources stay. POII refuses
+            while a confirmed record names this one as the record it replaced, so the history stays intact.
           </p>
           <ActionForm action={deleteRecordAction} aria-label="Delete record">
             <input type="hidden" name="recordId" value={record.id} />

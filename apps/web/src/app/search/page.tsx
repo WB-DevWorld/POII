@@ -3,6 +3,8 @@ import type { SearchResponse } from '@poii/contracts';
 import { ProblemNotice } from '@/components/ProblemNotice';
 import { apiTry, query } from '@/lib/api';
 import { headlineParts } from '@/lib/format';
+import { recordKindTerms, reviewStateTerms } from '@/lib/labels';
+import { CodeTag } from '@/components/Badges';
 import { first, type SearchParams } from '@/lib/notices';
 import { spanHref } from '@/lib/offsets';
 
@@ -39,7 +41,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
         <input id="q" name="q" type="search" defaultValue={q} placeholder='Words, "a phrase", or -exclude' maxLength={500} />
         <button type="submit">Search</button>
       </form>
-      <p className="hint">Full-text search over the current revision of every source and over every record. Deleted sources never appear.</p>
+      <p className="hint">Searches the latest revision of every source and every record, including records awaiting review. Deleted sources never appear.</p>
       {result && !result.ok ? <ProblemNotice problem={result.problem} title="Search failed." /> : null}
       {result?.ok && hits.length === 0 ? <p className="muted">Nothing found for “{q}”.</p> : null}
       {sources.length ? (
@@ -63,8 +65,10 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
             {records.map(hit => (
               <li key={`r-${hit.id}`}>
                 <a href={hitHref(hit)} data-testid="record-hit">{hit.title}</a>{' '}
-                {hit.kind ? <span className="tag">{hit.kind}</span> : null}
-                {hit.reviewState ? <span className={`tag${hit.reviewState === 'confirmed' ? ' ok' : hit.reviewState === 'rejected' ? ' danger' : ' warn'}`}>{hit.reviewState}</span> : null}
+                {hit.kind ? <CodeTag terms={recordKindTerms} code={hit.kind} /> : null}
+                {hit.reviewState ? (
+                  <CodeTag terms={reviewStateTerms} code={hit.reviewState} tone={hit.reviewState === 'confirmed' ? 'ok' : hit.reviewState === 'rejected' ? 'danger' : 'warn'} />
+                ) : null}
                 <Headline text={hit.headline} />
               </li>
             ))}

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { ActorView } from '@poii/contracts';
 import type { ActionState } from '@/lib/action-state';
 import { titleFromExcerpt, type Span } from '@/lib/offsets';
+import { labelOf, recordKindTerms } from '@/lib/labels';
 import { ActionForm, SubmitButton } from './ActionForm';
 import { RecordFields } from './RecordFields';
 import { SpanFields, spanSummary, useSpanSelection, type EvidenceRoleValue } from './SpanPicker';
@@ -48,18 +49,18 @@ export function CandidateForm({ action, sourceId, sourceTitle, revisionId, conte
   };
 
   return (
-    <ActionForm action={action} className="card candidate-form" aria-label="Create candidate from selection" testId="candidate-form">
-      <h2 id="candidate">Create candidate from selection</h2>
+    <ActionForm action={action} className="card candidate-form" aria-label="New record from the selected text" testId="candidate-form">
+      <h2 id="candidate">New record from the selected text</h2>
       <p className="hint">
         {enhanced
-          ? 'Select text in the source above; the span and a title fill in here.'
-          : 'Enter the start and end character offsets of the span (the deep-link start and end values).'}
+          ? 'Select the passage in the source above, then press "Use current selection". The quote and a title fill in here. The record is saved awaiting review.'
+          : 'Enter the start and end positions of the passage, in characters (the start and end values of a link to it).'}
       </p>
       <input type="hidden" name="sourceId" value={sourceId} />
       <input type="hidden" name="revisionId" value={revisionId} />
       {kept.length ? (
         <fieldset data-testid="kept-spans">
-          <legend>Passages kept for this candidate</legend>
+          <legend>Passages kept for this record</legend>
           <ul className="plain">
             {kept.map(s => {
               const excerpt = content.slice(s.start, s.end);
@@ -68,7 +69,7 @@ export function CandidateForm({ action, sourceId, sourceTitle, revisionId, conte
                   {/* Same wire format as the supersede form: "sourceId|revisionId|start|end|role". */}
                   <input type="hidden" name="keepEvidence" value={[sourceId, revisionId, s.start, s.end, s.role].join('|')} />
                   <span className="hint">
-                    {spanSummary(content, s)}, {s.role}
+                    {spanSummary(content, s)}, {s.role === 'primary' ? 'main evidence' : 'supporting'}
                   </span>
                   <blockquote>{excerpt.length > 300 ? `${excerpt.slice(0, 300)}…` : excerpt}</blockquote>
                   <button type="button" className="secondary" onClick={() => setKept(list => list.filter(k => k !== s))}>
@@ -82,17 +83,17 @@ export function CandidateForm({ action, sourceId, sourceTitle, revisionId, conte
       ) : null}
       <SpanFields
         idPrefix="cand"
-        legend={kept.length ? 'Another cited span (optional)' : 'Cited span'}
+        legend={kept.length ? 'Another quoted passage (optional)' : 'Quoted passage'}
         content={content}
         selection={selection}
         required={kept.length === 0}
       >
         <button type="button" className="secondary" onClick={keep} disabled={!picked} data-testid="keep-span">
-          Keep this span and select another
+          Keep this passage and select another
         </button>
       </SpanFields>
       {enhanced && kept.length === 0 ? (
-        <p className="hint">A candidate can cite more than one passage of this source: keep a span, then select the next one.</p>
+        <p className="hint">A record can quote more than one passage of this source: keep one, then select the next.</p>
       ) : null}
       <RecordFields
         idPrefix="cand"
@@ -105,20 +106,20 @@ export function CandidateForm({ action, sourceId, sourceTitle, revisionId, conte
       />
       {supersedable.length ? (
         <>
-          <label htmlFor="cand-supersedes">Supersedes (optional)</label>
+          <label htmlFor="cand-supersedes">Replaces an earlier record (optional)</label>
           <select id="cand-supersedes" name="supersedesRecordId" defaultValue="">
-            <option value="">Nothing</option>
+            <option value="">No, this is new</option>
             {supersedable.map(r => (
               <option key={r.id} value={r.id}>
-                {r.kind}: {r.title.length > 90 ? `${r.title.slice(0, 89)}…` : r.title}
+                {labelOf(recordKindTerms, r.kind)}: {r.title.length > 90 ? `${r.title.slice(0, 89)}…` : r.title}
               </option>
             ))}
           </select>
-          <p className="hint">The old record stays current until this candidate is confirmed.</p>
+          <p className="hint">The earlier record stays current until this one is confirmed.</p>
         </>
       ) : null}
       <div className="row actions">
-        <SubmitButton>Create candidate</SubmitButton>
+        <SubmitButton>Save for review</SubmitButton>
       </div>
     </ActionForm>
   );

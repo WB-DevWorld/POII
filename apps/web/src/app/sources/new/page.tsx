@@ -26,7 +26,7 @@ export default function NewSourcePage() {
         <label className="check">
           <input type="checkbox" name="neverSendToAi" /> Never send to AI
         </label>
-        <p className="hint">Covers everything derived from this source. It can be changed later on the source page.</p>
+        <p className="hint">Covers this source and every record that quotes it. Exports for an AI leave them out. It can be changed later on the source page.</p>
 
         <details>
           <summary>Origin (optional)</summary>
@@ -34,7 +34,7 @@ export default function NewSourcePage() {
           <input id="src-platform" name="platform" maxLength={200} placeholder="e.g. ChatGPT, Slack, email" />
           <label htmlFor="src-url">URL</label>
           <input id="src-url" name="url" type="url" maxLength={2000} />
-          <label htmlFor="src-conv">Conversation id</label>
+          <label htmlFor="src-conv">Conversation id (from the platform, if any)</label>
           <input id="src-conv" name="conversationId" maxLength={500} />
         </details>
 

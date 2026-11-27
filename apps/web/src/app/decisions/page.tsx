@@ -4,6 +4,7 @@ import { AnchorBadge, StatusBadge } from '@/components/Badges';
 import { ProblemNotice } from '@/components/ProblemNotice';
 import { apiTry } from '@/lib/api';
 import { formatTime } from '@/lib/format';
+import { authorityTerms, codeTitle, labelOf, stalenessTerms } from '@/lib/labels';
 import { spanHref } from '@/lib/offsets';
 
 export const metadata: Metadata = { title: 'Current decisions' };
@@ -12,8 +13,10 @@ function Staleness({ label, last }: { label: 'observed' | 'stale' | 'unknown'; l
   const tone = label === 'observed' ? 'ok' : label === 'stale' ? 'warn' : 'danger';
   return (
     <span>
-      <span className={`tag ${tone}`} data-testid="staleness">{label}</span>
-      <span className="hint">{last ? ` last observed ${formatTime(last)}` : ' never observed'}</span>
+      <span className={`tag ${tone}`} data-testid="staleness" data-code={label} title={codeTitle(stalenessTerms, label)}>
+        {labelOf(stalenessTerms, label)}
+      </span>
+      <span className="hint">{last ? ` last seen in practice ${formatTime(last)}` : ' never recorded as seen in practice'}</span>
     </span>
   );
 }
@@ -24,13 +27,13 @@ export default async function DecisionsPage() {
     <section>
       <h1>Current decisions</h1>
       <p className="lede">
-        Derived on every visit from approvals and supersession: confirmed decisions that no confirmed successor replaces. Nothing
-        here is edited by hand.
+        Every confirmed decision that no confirmed record has replaced. POII works this list out fresh on every visit from the
+        confirmations and replacements; nothing here is edited by hand. Decisions awaiting review are not listed.
       </p>
       {!result.ok ? (
         <ProblemNotice problem={result.problem} title="Current decisions could not be loaded." />
       ) : result.data.length === 0 ? (
-        <p className="muted">No confirmed decisions yet. Confirm a decision candidate to see it here.</p>
+        <p className="muted">No confirmed decisions yet. Confirm a decision that is awaiting review to see it here.</p>
       ) : (
         <ul className="decisions" data-testid="decisions-list">
           {result.data.map(d => (
@@ -43,23 +46,24 @@ export default async function DecisionsPage() {
                 <Staleness label={d.staleness.label} last={d.staleness.lastObservedAt} />
               </p>
               <p>
-                Approved by <strong>{d.approval.approvedByDisplayName}</strong> ({d.approval.authority}) at{' '}
+                Confirmed by <strong>{d.approval.approvedByDisplayName}</strong> (
+                <span data-code={d.approval.authority}>{labelOf(authorityTerms, d.approval.authority)}</span> authority) at{' '}
                 <time dateTime={d.approval.approvedAt}>{formatTime(d.approval.approvedAt)}</time>
               </p>
               {d.replaced.length ? (
                 <div>
-                  <span className="muted">Replaced: </span>
+                  <span className="muted">Replaced earlier records: </span>
                   <ol className="chain">
                     {d.replaced.map(r => (
                       <li key={r.id}>
                         <a href={`/records/${r.id}`}>{r.title}</a>
-                        {r.approvedAt ? <span className="hint"> (approved {formatTime(r.approvedAt)})</span> : null}
+                        {r.approvedAt ? <span className="hint"> (confirmed {formatTime(r.approvedAt)})</span> : null}
                       </li>
                     ))}
                   </ol>
                 </div>
               ) : (
-                <p className="hint">Replaced nothing.</p>
+                <p className="hint">Replaced no earlier record.</p>
               )}
               {d.primaryEvidence ? (
                 d.primaryEvidence.available && d.primaryEvidence.sourceId ? (
@@ -72,18 +76,18 @@ export default async function DecisionsPage() {
                         d.primaryEvidence.locator.endChar,
                       )}
                     >
-                      Primary evidence: {d.primaryEvidence.sourceTitle ?? 'source'}, lines {d.primaryEvidence.locator.startLine}–
+                      Main evidence: {d.primaryEvidence.sourceTitle ?? 'source'}, lines {d.primaryEvidence.locator.startLine}–
                       {d.primaryEvidence.locator.endLine}
                     </a>{' '}
                     <AnchorBadge result={d.primaryEvidence.anchorResult} />
                   </p>
                 ) : (
                   <p>
-                    <span className="tag danger">evidence unavailable</span> the cited source was deleted.
+                    <span className="tag danger" data-code="unavailable">evidence unavailable</span> the quoted source was deleted.
                   </p>
                 )
               ) : (
-                <p className="hint">No primary evidence.</p>
+                <p className="hint">No main evidence.</p>
               )}
             </li>
           ))}
