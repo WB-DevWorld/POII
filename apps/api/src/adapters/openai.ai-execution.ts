@@ -28,7 +28,18 @@ const ResponseObject = z.object({
   }).passthrough().nullable().optional(),
 }).passthrough();
 
-const ErrorResponse = z.object({ error: z.object({ type: z.string().nullable().optional(), message: z.string().optional() }).passthrough() }).passthrough();
+const ErrorResponse = z.object({
+  error: z.object({ type: z.string().nullable().optional(), code: z.string().nullable().optional(), message: z.string().optional() }).passthrough(),
+}).passthrough();
+
+/**
+ * Error codes that mean the OpenAI organization has nothing left to pay with. `credit_balance_exhausted` (HTTP 429):
+ * prepaid or subscription API credit used up (OpenAI docs, checked 2026-11-27). `insufficient_quota` (HTTP 429):
+ * no credit or quota at all (seen live on 2026-10-26). Retrying cannot help; they are reported as `out_of_credit`.
+ * Every other 429 (`rate_limit_exceeded` and the like) is a passing rate limit and stays `provider_error`.
+ * POII never retries a provider call by itself: a person prepares a new preview and sends again.
+ */
+export const OPENAI_OUT_OF_CREDIT_CODES: ReadonlySet<string> = new Set(['credit_balance_exhausted', 'insufficient_quota']);
 
 
 export class OpenAiAiExecution implements AiProviderClient {
@@ -75,7 +86,20 @@ export class OpenAiAiExecution implements AiProviderClient {
     }
     if (!response.ok) {
       const err = ErrorResponse.safeParse(json);
-      const detail = err.success ? `${err.data.error.type ?? 'error'}: ${(err.data.error.message ?? '').slice(0, 300)}` : 'no error body';
+      const code = err.success ? err.data.error.code ?? null : null;
+      if (err.success && code && OPENAI_OUT_OF_CREDIT_CODES.has(code)) {
+        return failure('out_of_credit',
+          `OpenAI has no API credit left for this organization (${code}); nothing was generated or charged. `
+          + 'AI extraction with OpenAI works again once credit is added or the next billing cycle brings new credit. '
+          + 'The manual path keeps working meanwhile.',
+          response.status, true);
+      }
+      const detail = err.success ? `${err.data.error.type ?? 'error'}${code ? ` ${code}` : ''}: ${(err.data.error.message ?? '').slice(0, 300)}` : 'no error body';
+      if (err.success && response.status === 429) {
+        return failure('provider_error',
+          `OpenAI is limiting the request rate (${detail}); nothing was charged. Prepare a new preview and send it again in a minute.`,
+          response.status, true);
+      }
       // A non-2xx answer carrying the provider's error envelope (4xx, 5xx, 529 overloaded) means the request was
       // rejected without a billed generation: the reservation is released. Without an envelope (a proxy page,
       // say) it is unknown whether the provider processed it, so the reservation stays counted.

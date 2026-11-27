@@ -1,0 +1,12 @@
+{
+  "_mocked": "MOCKED: hand-written, not captured from a live provider. An ordinary HTTP 429 rate limit (error code rate_limit_exceeded) in the OpenAI error envelope.",
+  "status": 429,
+  "body": {
+    "error": {
+      "message": "Rate limit reached for requests per minute. Please try again in 20s.",
+      "type": "requests",
+      "param": null,
+      "code": "rate_limit_exceeded"
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "_mocked": "MOCKED: hand-written, not captured from a live provider. HTTP 429 with error code credit_balance_exhausted as the OpenAI documentation describes it (checked 2026-11-27); the message and type fields are illustrative, POII matches on the code only.",
+  "status": 429,
+  "body": {
+    "error": {
+      "message": "Your credit balance is exhausted. Add credits to continue.",
+      "type": "insufficient_quota",
+      "param": null,
+      "code": "credit_balance_exhausted"
+    }
+  }
+}

@@ -57,7 +57,8 @@ export interface ExtractedCandidate {
   endChar: number;
 }
 
-export type AiOutcome = 'ok' | 'malformed' | 'refused' | 'truncated' | 'provider_error' | 'network_error';
+/** `out_of_credit`: the provider refused because the account has no API credit or quota left. Never retried. */
+export type AiOutcome = 'ok' | 'malformed' | 'refused' | 'truncated' | 'provider_error' | 'out_of_credit' | 'network_error';
 
 export interface AiExecution {
   previewId: string;
