@@ -30,11 +30,11 @@ export default async function SourcesPage({ searchParams }: { searchParams: Sear
         <h1>Sources</h1>
         <a className="button" href="/sources/new">Add a source</a>
       </div>
-      <p className="lede">Originals are kept unchanged. A re-import with different content becomes a new revision.</p>
+      <p className="lede">Chats, documents and notes that records quote from. Originals are kept unchanged; importing a changed version adds a new revision.</p>
       <PageNotice notice={params.notice} />
       {picking ? (
         <p className="notice" role="status" data-testid="picking-source">
-          Choose the source that holds the passage to cite for <a href={`/records/${picking.id}`}>{picking.title}</a>.
+          Choose the source that holds the passage to add to <a href={`/records/${picking.id}`}>{picking.title}</a>.
         </p>
       ) : null}
       <form method="get" className="filters" aria-label="Filter sources">
@@ -57,8 +57,8 @@ export default async function SourcesPage({ searchParams }: { searchParams: Sear
             <thead>
               <tr>
                 <th scope="col">Title</th>
-                <th scope="col">Kind</th>
-                <th scope="col">Created</th>
+                <th scope="col">Added by</th>
+                <th scope="col">Added</th>
                 <th scope="col">Revisions</th>
                 <th scope="col">Records</th>
                 <th scope="col">AI</th>
@@ -71,7 +71,7 @@ export default async function SourcesPage({ searchParams }: { searchParams: Sear
                     <a href={picking ? `/sources/${source.id}?addTo=${picking.id}#add-evidence` : `/sources/${source.id}`}>{source.title}</a>
                     {source.archivedAt ? <span className="tag warn">archived</span> : null}
                   </td>
-                  <td>{source.kind}</td>
+                  <td data-code={source.kind}>{source.kind === 'paste' ? 'Pasted' : source.kind === 'upload' ? 'Uploaded file' : source.kind === 'import' ? 'Chat import' : source.kind}</td>
                   <td className="nowrap">{formatTime(source.createdAt)}</td>
                   <td>{source.revisionCount}</td>
                   <td>{source.recordCount}</td>

@@ -7,6 +7,7 @@ import { ProblemNotice } from '@/components/ProblemNotice';
 import { apiTry } from '@/lib/api';
 import { agentFileHref, exportKindLabel, isAgentInstructionsManifest, isAgentInstructionsRun } from '@/lib/agent-instructions'; // #19
 import { formatTime } from '@/lib/format';
+import { labelOf, lifecycleStatusTerms, recordKindTerms, reviewStateTerms } from '@/lib/labels';
 import { first, type SearchParams } from '@/lib/notices';
 
 export const metadata: Metadata = { title: 'Export' };
@@ -71,8 +72,9 @@ export default async function ExportPage({ searchParams }: { searchParams: Searc
     <section>
       <h1>Export a context pack</h1>
       <p className="lede">
-        A cited pack in Markdown (for people and agents) and JSON (for programs), generated from one manifest that lists the
-        sources it included, excluded and could not include.
+        A context pack is a file of records, each with its quoted evidence, for a colleague or an AI agent to read. It comes as
+        Markdown (for people and agents) and JSON (for programs), and lists every source it included, left out, or could not
+        include, with the reason. By default it holds confirmed records only.
       </p>
 
       {run && !run.ok ? <ProblemNotice problem={run.problem} title="That export could not be loaded." /> : null}
@@ -92,8 +94,8 @@ export default async function ExportPage({ searchParams }: { searchParams: Searc
             </a>
           </p>
           <ManifestTable title="Included" entries={run.data.manifest.included} testId="manifest-included" empty="No sources were included." />
-          <ManifestTable title="Excluded" entries={run.data.manifest.excluded} testId="manifest-excluded" empty="Nothing was excluded." />
-          <ManifestTable title="Unavailable" entries={run.data.manifest.unavailable} testId="manifest-unavailable" empty="Nothing was unavailable." />
+          <ManifestTable title="Left out" entries={run.data.manifest.excluded} testId="manifest-excluded" empty="Nothing was left out." />
+          <ManifestTable title="Could not be included" entries={run.data.manifest.unavailable} testId="manifest-unavailable" empty="Nothing was missing." />
           <details>
             <summary>Preview the Markdown</summary>
             <pre className="snapshot">{run.data.markdown}</pre>
@@ -128,42 +130,45 @@ export default async function ExportPage({ searchParams }: { searchParams: Searc
             <input type="radio" name="destination" value="person" defaultChecked /> A person
           </label>
           <label className="check">
-            <input type="radio" name="destination" value="ai" /> An AI (leaves out everything marked never send to AI)
+            <input type="radio" name="destination" value="ai" /> An AI (leaves out every source marked &quot;Never send to AI&quot; and the records quoting it)
           </label>
         </fieldset>
         <fieldset>
-          <legend>Kinds (none ticked = all)</legend>
+          <legend>Kinds of record (none ticked = all)</legend>
           <div className="checks">
             {recordKinds.map(k => (
               <label key={k} className="check">
-                <input type="checkbox" name="kinds" value={k} /> {k}
+                <input type="checkbox" name="kinds" value={k} /> {labelOf(recordKindTerms, k)}
               </label>
             ))}
           </div>
         </fieldset>
         <fieldset>
-          <legend>Review states</legend>
+          <legend>Review</legend>
           <div className="checks">
             {reviewStates.map(s => (
               <label key={s} className="check">
-                <input type="checkbox" name="reviewStates" value={s} defaultChecked={s === 'confirmed'} /> {s}
+                <input type="checkbox" name="reviewStates" value={s} defaultChecked={s === 'confirmed'} /> {labelOf(reviewStateTerms, s)}
               </label>
             ))}
           </div>
-          <p className="hint">Defaults to confirmed only.</p>
+          <p className="hint">
+            Confirmed only by default. If you include records awaiting review, the pack still marks each one as not confirmed, so an
+            agent can tell them apart.
+          </p>
         </fieldset>
         <fieldset>
-          <legend>Lifecycle statuses (none ticked = all)</legend>
+          <legend>Stages (none ticked = all)</legend>
           <div className="checks">
             {lifecycleStatuses.map(s => (
               <label key={s} className="check">
-                <input type="checkbox" name="lifecycleStatuses" value={s} /> {s}
+                <input type="checkbox" name="lifecycleStatuses" value={s} /> {labelOf(lifecycleStatusTerms, s)}
               </label>
             ))}
           </div>
         </fieldset>
         <label className="check">
-          <input type="checkbox" name="includeExcerpts" defaultChecked /> Include excerpts
+          <input type="checkbox" name="includeExcerpts" defaultChecked /> Include the quoted passages
         </label>
         <label htmlFor="pack-title">Title (optional)</label>
         <input id="pack-title" name="title" maxLength={200} />

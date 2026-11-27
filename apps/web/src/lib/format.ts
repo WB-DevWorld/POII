@@ -24,7 +24,7 @@ export function describeTime(
     case 'known':
       return value
         ? { text: formatTime(value), tone: 'known', conflicts: [] }
-        : { text: 'known, but no value recorded', tone: 'unknown', conflicts: [] };
+        : { text: 'marked known, but no time recorded', tone: 'unknown', conflicts: [] };
     case 'not_applicable':
       return { text: 'not applicable', tone: 'na', conflicts: [] };
     case 'conflicting': {
@@ -33,10 +33,10 @@ export function describeTime(
         return c.note ? `${when} (${c.note})` : when;
       });
       if (value && list.length === 0) list.push(formatTime(value));
-      return { text: 'conflicting', tone: 'conflicting', conflicts: list };
+      return { text: 'sources disagree', tone: 'conflicting', conflicts: list };
     }
     default:
-      return { text: 'unknown', tone: 'unknown', conflicts: [] };
+      return { text: 'not known', tone: 'unknown', conflicts: [] };
   }
 }
 
@@ -187,24 +187,24 @@ export function explainCode(code: string): string | null {
     case 'workspace_not_empty':
       return 'Restore only works into an empty workspace. This workspace already has data, so nothing was changed. Restore into a clean install instead.';
     case 'confirmed_record_immutable':
-      return 'A confirmed record keeps its wording and attribution. Supersede it with a new candidate instead; status and times can still change.';
+      return 'A confirmed record keeps its wording and who said it. To change those, replace it with a new version; its stage and times can still change.';
     case 'authority_required':
-      return 'Only a person with authority can do this.';
+      return 'Only a person with authority to confirm can do this. Nothing was changed.';
     case 'idempotency_mismatch':
-      return 'This request was already sent with different content. Reload the page and try again.';
+      return 'This request was already sent with different content, so nothing was changed. Reload the page and try again.';
     case 'validation_failed':
-      return 'Some values did not match what POII expects:';
+      return 'Some values need fixing before this can be saved:';
     case 'invalid_backup':
-      return 'That file is not a POII backup this version can restore.';
+      return 'That file is not a POII backup this version can restore. Nothing was changed.';
     case 'attribution_mismatch':
-      return 'The stated role does not fit the person chosen as "stated by". Role owner is only for the workspace owner, role assistant only for an AI assistant, and an AI assistant can only speak as assistant.';
+      return 'The role does not fit the person chosen under "Who said it". The role Owner is only for the workspace owner, the role AI assistant only for an AI assistant, and an AI assistant can only speak as AI assistant.';
     case 'record_has_confirmed_successor':
-      return 'A confirmed successor names this record as the one it replaced, so it cannot be deleted. The history must stay intact.';
+      return 'A confirmed record replaced this one, so it cannot be deleted: the history must stay intact. Nothing was changed.';
     case 'last_evidence':
-      return 'A record keeps at least one cited span.';
+      return 'A record must keep at least one quoted passage, so this one cannot be removed.';
     case 'cannot_supersede_rejected':
     case 'record_rejected':
-      return 'This record was rejected, so it cannot be confirmed or superseded.';
+      return 'This record was rejected, so it cannot be confirmed or replaced.';
     case 'already_confirmed':
       return 'This record is already confirmed.';
     case 'api_unreachable':

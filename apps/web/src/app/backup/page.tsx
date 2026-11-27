@@ -10,7 +10,8 @@ export default function BackupPage() {
       <h1>Back up and restore</h1>
       <p className="lede">
         A backup is the complete workspace in one JSON file (format poii.backup v1): sources with their original bytes,
-        revisions, records, versions, evidence, approvals, the audit log and deletion tombstones, all with their original ids.
+        revisions, records and their history, evidence, confirmations, the audit log and a note of everything deleted, all with
+        their original ids. A restore only works into an empty workspace.
       </p>
       <div className="grid-2">
         <div className="card">

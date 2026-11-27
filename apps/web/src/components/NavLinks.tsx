@@ -11,6 +11,7 @@ const navigation = [
   { href: '/export', label: 'Export' },
   { href: '/backup', label: 'Backup' },
   { href: '/tokens', label: 'Tokens' },
+  { href: '/glossary', label: 'Glossary' },
 ];
 
 export function NavLinks() {

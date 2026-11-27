@@ -1,5 +1,15 @@
 import type { ActorView, LifecycleStatus, RecordKind, StatedRole, StatementMode, TimeStatus } from '@poii/contracts';
-import { conflictLines, conflictsFor, humanize, inputFromIso, type ConflictSource, type TimeConflictValue } from '@/lib/format';
+import { conflictLines, conflictsFor, inputFromIso, type ConflictSource, type TimeConflictValue } from '@/lib/format';
+import {
+  actorKindTerms,
+  authorityTerms,
+  labelOf,
+  lifecycleStatusTerms,
+  recordKindTerms,
+  statedRoleTerms,
+  statementModeTerms,
+  timeStatusTerms,
+} from '@/lib/labels';
 
 const kinds: RecordKind[] = ['fact', 'requirement', 'decision', 'question'];
 const statuses: LifecycleStatus[] = ['proposed', 'decided', 'implemented', 'observed', 'unknown'];
@@ -41,18 +51,18 @@ export function TimeInputs({
   conflicts?: TimeConflictValue[] | null;
   sources?: ConflictSource[];
 }) {
-  const label = field === 'effective' ? 'Effective time' : 'Observed time';
+  const label = field === 'effective' ? 'True from (effective time)' : 'Seen in practice (observed time)';
   const id = `${idPrefix}-${field}`;
   return (
     <fieldset className="time-inputs">
       <legend>{label}</legend>
       <div className="inline-fields">
         <div>
-          <label htmlFor={`${id}-status`}>Status</label>
+          <label htmlFor={`${id}-status`}>Is the time known?</label>
           <select id={`${id}-status`} name={`${field}AtStatus`} defaultValue={status ?? 'unknown'}>
             {timeStatuses.map(s => (
               <option key={s} value={s}>
-                {humanize(s)}
+                {labelOf(timeStatusTerms, s)}
               </option>
             ))}
           </select>
@@ -62,7 +72,7 @@ export function TimeInputs({
           <input id={`${id}-at`} type="datetime-local" name={`${field}At`} defaultValue={inputFromIso(value)} />
         </div>
       </div>
-      <label htmlFor={`${id}-conflicts`}>Competing values, if conflicting</label>
+      <label htmlFor={`${id}-conflicts`}>Times the sources give, if they disagree</label>
       <textarea
         id={`${id}-conflicts`}
         name={`${field}Conflicts`}
@@ -72,7 +82,7 @@ export function TimeInputs({
       />
       <p className="hint">
         One per line: date, optional time (UTC), then a note. For a value whose source carries no date, start the line with
-        &quot;no date&quot;. Only used when the status is conflicting.
+        &quot;no date&quot;. Only used when &quot;Sources disagree&quot; is chosen above.
       </p>
       {sources.length ? (
         <div className="hint" data-testid={`${id}-conflict-sources`}>
@@ -98,18 +108,18 @@ export function AttributionFields({ idPrefix, actors, defaults }: { idPrefix: st
   const selectable = actors.filter(a => a.kind === 'person' || a.kind === 'ai_assistant');
   return (
     <fieldset>
-      <legend>Attribution: who said it</legend>
+      <legend>Who said it</legend>
       <p className="hint">
-        This is not approval. Pasted assistant text gets role <strong>assistant</strong> and mode <strong>pasted</strong>; it is never the
-        owner&apos;s statement. Role owner is only for the workspace owner (leave &quot;stated by&quot; empty to mean them); role
-        assistant needs an AI assistant as &quot;stated by&quot;.
+        Saying something is not confirming it. Text pasted from an AI chat is <strong>AI assistant</strong>, <strong>Pasted
+        text</strong>; it never counts as the owner speaking. The role Owner is only for the workspace owner (leave &quot;Said
+        by&quot; empty to mean them); the role AI assistant needs an AI assistant under &quot;Said by&quot;.
       </p>
-      <label htmlFor={`${idPrefix}-statedby`}>Stated by</label>
+      <label htmlFor={`${idPrefix}-statedby`}>Said by</label>
       <select id={`${idPrefix}-statedby`} name="statedByActorId" defaultValue={defaults.statedByActorId ?? ''}>
-        <option value="">Unknown or not recorded</option>
+        <option value="">Not recorded (or the owner)</option>
         {selectable.map(a => (
           <option key={a.id} value={a.id}>
-            {a.displayName} ({humanize(a.kind)}{a.authority ? `, ${a.authority} authority` : ''})
+            {a.displayName} ({labelOf(actorKindTerms, a.kind)}{a.authority ? `, ${labelOf(authorityTerms, a.authority)} authority` : ''})
           </option>
         ))}
       </select>
@@ -121,32 +131,32 @@ export function AttributionFields({ idPrefix, actors, defaults }: { idPrefix: st
             <input id={`${idPrefix}-newname`} name="newActorName" maxLength={200} autoComplete="off" />
           </div>
           <div>
-            <label htmlFor={`${idPrefix}-newkind`}>Kind</label>
+            <label htmlFor={`${idPrefix}-newkind`}>Person or AI</label>
             <select id={`${idPrefix}-newkind`} name="newActorKind" defaultValue="person">
-              <option value="person">person</option>
+              <option value="person">Person</option>
               <option value="ai_assistant">AI assistant</option>
             </select>
           </div>
         </div>
-        <p className="hint">When a name is entered, it is added and used as &quot;stated by&quot;. New people have no authority.</p>
+        <p className="hint">When a name is entered, it is added and used as &quot;Said by&quot;. New people cannot confirm records.</p>
       </details>
       <div className="inline-fields">
         <div>
-          <label htmlFor={`${idPrefix}-role`}>Stated role</label>
+          <label htmlFor={`${idPrefix}-role`}>In the role of</label>
           <select id={`${idPrefix}-role`} name="statedRole" defaultValue={defaults.statedRole ?? 'unknown'}>
             {roles.map(r => (
               <option key={r} value={r}>
-                {humanize(r)}
+                {labelOf(statedRoleTerms, r)}
               </option>
             ))}
           </select>
         </div>
         <div>
-          <label htmlFor={`${idPrefix}-mode`}>Statement mode</label>
+          <label htmlFor={`${idPrefix}-mode`}>How it was captured</label>
           <select id={`${idPrefix}-mode`} name="statementMode" defaultValue={defaults.statementMode === 'ai_extracted' ? 'quoted' : (defaults.statementMode ?? 'quoted')}>
             {humanModes.map(m => (
               <option key={m} value={m}>
-                {m}
+                {labelOf(statementModeTerms, m)}
               </option>
             ))}
           </select>
@@ -180,24 +190,24 @@ export function RecordFields({
     <>
       <div className="inline-fields">
         <div>
-          <label htmlFor={`${idPrefix}-kind`}>Kind</label>
+          <label htmlFor={`${idPrefix}-kind`}>Kind of record</label>
           <select id={`${idPrefix}-kind`} name="kind" required defaultValue={defaults.kind ?? ''}>
             <option value="" disabled>
               Choose…
             </option>
             {kinds.map(k => (
               <option key={k} value={k}>
-                {k}
+                {labelOf(recordKindTerms, k)}
               </option>
             ))}
           </select>
         </div>
         <div>
-          <label htmlFor={`${idPrefix}-status`}>Lifecycle status</label>
+          <label htmlFor={`${idPrefix}-status`}>Stage</label>
           <select id={`${idPrefix}-status`} name="lifecycleStatus" defaultValue={defaults.lifecycleStatus ?? 'unknown'}>
             {statuses.map(s => (
               <option key={s} value={s}>
-                {s}
+                {labelOf(lifecycleStatusTerms, s)}
               </option>
             ))}
           </select>
@@ -205,7 +215,7 @@ export function RecordFields({
       </div>
       <label htmlFor={`${idPrefix}-title`}>Title</label>
       <input id={`${idPrefix}-title`} name="title" required maxLength={500} {...titleProps} />
-      <label htmlFor={`${idPrefix}-body`}>Body</label>
+      <label htmlFor={`${idPrefix}-body`}>Text (optional)</label>
       <textarea id={`${idPrefix}-body`} name="body" className="short" maxLength={100000} defaultValue={defaults.body ?? ''} />
       <AttributionFields idPrefix={idPrefix} actors={actors} defaults={defaults} />
       <TimeInputs

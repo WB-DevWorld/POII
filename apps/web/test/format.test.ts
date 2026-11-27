@@ -24,8 +24,8 @@ test('formatTime renders UTC regardless of the server time zone', () => {
 
 test('describeTime keeps unknown, not applicable and conflicting explicit', () => {
   assert.deepEqual(describeTime('2026-03-04T16:02:00Z', 'known'), { text: '2026-03-04 16:02 UTC', tone: 'known', conflicts: [] });
-  assert.equal(describeTime(null, 'unknown').text, 'unknown');
-  assert.equal(describeTime('2026-03-04T16:02:00Z', 'unknown').text, 'unknown');
+  assert.equal(describeTime(null, 'unknown').text, 'not known');
+  assert.equal(describeTime('2026-03-04T16:02:00Z', 'unknown').text, 'not known');
   assert.equal(describeTime(null, 'not_applicable').text, 'not applicable');
   assert.equal(describeTime(null, 'known').tone, 'unknown');
   const conflicting = describeTime(null, 'conflicting', [
@@ -33,9 +33,9 @@ test('describeTime keeps unknown, not applicable and conflicting explicit', () =
     { value: '2026-03-06T00:00:00Z' },
     { value: null, note: 'ticket has no date' },
   ]);
-  assert.equal(conflicting.text, 'conflicting');
+  assert.equal(conflicting.text, 'sources disagree');
   assert.deepEqual(conflicting.conflicts, ['2026-03-04 00:00 UTC (chat)', '2026-03-06 00:00 UTC', 'no date (ticket has no date)']);
-  assert.equal(describeTime(null, undefined).text, 'unknown');
+  assert.equal(describeTime(null, undefined).text, 'not known');
 });
 
 test('isoFromInput reads datetime-local and dates as UTC and rejects nonsense', () => {

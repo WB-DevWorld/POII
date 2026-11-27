@@ -6,6 +6,7 @@ import { PageNotice } from '@/components/PageNotice';
 import { ProblemNotice } from '@/components/ProblemNotice';
 import { apiTry, query } from '@/lib/api';
 import { formatTime } from '@/lib/format';
+import { labelOf, lifecycleStatusTerms, recordKindTerms, reviewStateTerms } from '@/lib/labels';
 import { first, type SearchParams } from '@/lib/notices';
 
 export const metadata: Metadata = { title: 'Records' };
@@ -29,35 +30,36 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
     <section>
       <h1>Records</h1>
       <p className="lede">
-        Facts, requirements, decisions and questions. Attribution (who said it) and review (who confirmed it) are separate.
-        New records start on a <a href="/sources">source page</a> from a selected span.
+        Facts, requirements, decisions and open questions, each quoting its evidence. Who said something and who confirmed
+        it are shown separately. To add a record, open a <a href="/sources">source</a> and select the passage it rests on.
+        The words used are explained in the <a href="/glossary">glossary</a>.
       </p>
       <PageNotice notice={sp.notice} />
       <form method="get" className="filters" aria-label="Filter records">
         <div>
-          <label htmlFor="f-kind">Kind</label>
+          <label htmlFor="f-kind">Kind of record</label>
           <select id="f-kind" name="kind" defaultValue={kind ?? ''}>
             <option value="">Any</option>
             {recordKinds.map(k => (
-              <option key={k} value={k}>{k}</option>
+              <option key={k} value={k}>{labelOf(recordKindTerms, k)}</option>
             ))}
           </select>
         </div>
         <div>
-          <label htmlFor="f-review">Review state</label>
+          <label htmlFor="f-review">Review</label>
           <select id="f-review" name="reviewState" defaultValue={reviewState ?? ''}>
             <option value="">Any</option>
             {reviewStates.map(k => (
-              <option key={k} value={k}>{k}</option>
+              <option key={k} value={k}>{labelOf(reviewStateTerms, k)}</option>
             ))}
           </select>
         </div>
         <div>
-          <label htmlFor="f-status">Lifecycle status</label>
+          <label htmlFor="f-status">Stage</label>
           <select id="f-status" name="lifecycleStatus" defaultValue={lifecycleStatus ?? ''}>
             <option value="">Any</option>
             {lifecycleStatuses.map(k => (
-              <option key={k} value={k}>{k}</option>
+              <option key={k} value={k}>{labelOf(lifecycleStatusTerms, k)}</option>
             ))}
           </select>
         </div>
@@ -79,14 +81,14 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
                 <KindBadge kind={r.kind} />
                 <ReviewBadge state={r.reviewState} />
                 <StatusBadge status={r.lifecycleStatus} />
-                {r.supersededByReviewState === 'confirmed' ? <span className="tag warn">superseded</span> : null}
-                {r.supersededByReviewState === 'candidate' ? <span className="tag">replacement pending</span> : null}
-                {r.supersedesRecordId ? <span className="tag">supersedes another record</span> : null}
+                {r.supersededByReviewState === 'confirmed' ? <span className="tag warn" data-code="superseded" title="A confirmed record replaced this one (supersededByRecordId)">replaced</span> : null}
+                {r.supersededByReviewState === 'candidate' ? <span className="tag" data-code="replacement_pending" title="A replacement is awaiting review; this record stays current until it is confirmed">replacement awaiting review</span> : null}
+                {r.supersedesRecordId ? <span className="tag" data-code="supersedes" title="This record replaces an earlier one (supersedesRecordId)">replaces an earlier record</span> : null}
                 {!r.aiAllowed ? <AiBadge allowed={false} /> : null}
               </div>
               <div className="row tags">
                 <Attribution by={r.statedByDisplayName} role={r.statedRole} mode={r.statementMode} />
-                <span className="hint">recorded {formatTime(r.recordedAt)} · v{r.versionNo}</span>
+                <span className="hint">saved {formatTime(r.recordedAt)} · version {r.versionNo}</span>
               </div>
             </li>
           ))}

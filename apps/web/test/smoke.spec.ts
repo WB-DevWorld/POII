@@ -115,13 +115,13 @@ test('manual journey: source → candidates → confirm → supersede → curren
   await page.locator('#cand-mode').selectOption('quoted');
   await page.locator('#cand-effective-status').selectOption('known');
   await page.locator('#cand-effective-at').fill('2026-03-04T16:02');
-  await submit(page, 'Create candidate', /\/records\/[0-9a-f-]{36}\?notice=created/);
+  await submit(page, 'Save for review', /\/records\/[0-9a-f-]{36}\?notice=created/);
   const oldId = recordIdFrom(page);
-  await expect(page.getByTestId('review-state').first()).toHaveText('candidate');
-  await expect(page.getByTestId('approval-block')).toContainText('Not approved');
+  await expect(page.getByTestId('review-state').first()).toHaveAttribute('data-code', 'candidate');
+  await expect(page.getByTestId('approval-block')).toContainText('Not confirmed');
   await expect(page.getByTestId('attribution-block')).toContainText(`Mara ${runId}`);
   await expect(page.getByTestId('time-effective')).toContainText('2026-03-04 16:02 UTC');
-  await expect(page.getByTestId('time-observed')).toContainText('unknown');
+  await expect(page.getByTestId('time-observed')).toContainText('not known');
 
   // Evidence opens the exact span.
   await page.getByTestId('evidence-link').first().click();
@@ -130,9 +130,9 @@ test('manual journey: source → candidates → confirm → supersede → curren
 
   // 3. Confirm it.
   await submit(page, 'Confirm', /notice=confirmed/);
-  await expect(page.getByTestId('review-state').first()).toHaveText('confirmed');
-  await expect(page.getByTestId('approval-summary')).toContainText('Approved by');
-  await expect(page.getByTestId('approval-summary')).toContainText('replacing nothing');
+  await expect(page.getByTestId('review-state').first()).toHaveAttribute('data-code', 'confirmed');
+  await expect(page.getByTestId('approval-summary')).toContainText('Confirmed by');
+  await expect(page.getByTestId('approval-summary')).toContainText('replacing no earlier record');
 
   // 4. Superseding candidate from the NATS span (offsets typed in), stated by the owner, then confirm.
   await page.goto(sourceUrl);
@@ -146,22 +146,22 @@ test('manual journey: source → candidates → confirm → supersede → curren
   await page.locator('#cand-role').selectOption('owner');
   await page.locator('#cand-mode').selectOption('quoted');
   await page.locator('#cand-supersedes').selectOption(oldId);
-  await submit(page, 'Create candidate', /\/records\/[0-9a-f-]{36}\?notice=created/);
+  await submit(page, 'Save for review', /\/records\/[0-9a-f-]{36}\?notice=created/);
   const newId = recordIdFrom(page);
   expect(newId).not.toBe(oldId);
   await expect(page.getByTestId('antecedent-preview')).toContainText(oldTitle);
-  // Until the replacement is confirmed the old decision still counts: the list says "replacement pending", not
-  // "superseded" (staff test, 26 Nov 2026).
+  // Until the replacement is confirmed the old decision still counts: the list says "replacement awaiting review", not
+  // "replaced" (staff test, 26 Nov 2026). The tags keep the codes replacement_pending and superseded in data-code.
   const oldRow = () => page.getByTestId('records-list').locator('li').filter({ has: page.locator(`a[href="/records/${oldId}"]`) });
   await page.goto('/records?reviewState=confirmed');
-  await expect(oldRow().locator('.tag', { hasText: 'replacement pending' })).toHaveCount(1);
-  await expect(oldRow().locator('.tag', { hasText: /^superseded$/ })).toHaveCount(0);
+  await expect(oldRow().locator('.tag[data-code="replacement_pending"]')).toHaveCount(1);
+  await expect(oldRow().locator('.tag[data-code="superseded"]')).toHaveCount(0);
   await page.goto(`/records/${newId}`);
   await submit(page, 'Confirm', /notice=confirmed/);
   await expect(page.getByTestId('approval-summary')).toContainText(`replacing ${oldTitle}`);
   await page.goto('/records?reviewState=confirmed');
-  await expect(oldRow().locator('.tag', { hasText: /^superseded$/ })).toHaveCount(1);
-  await expect(oldRow().locator('.tag', { hasText: 'replacement pending' })).toHaveCount(0);
+  await expect(oldRow().locator('.tag[data-code="superseded"]')).toHaveCount(1);
+  await expect(oldRow().locator('.tag[data-code="replacement_pending"]')).toHaveCount(0);
   await page.goto(`/records/${newId}`);
 
   // 5. Current decisions: the new one is current, the old one only appears as replaced.

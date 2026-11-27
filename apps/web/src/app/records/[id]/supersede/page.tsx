@@ -7,7 +7,7 @@ import { RecordFields } from '@/components/RecordFields';
 import { apiTry } from '@/lib/api';
 import { conflictSourceList } from '@/lib/format';
 
-export const metadata: Metadata = { title: 'Supersede record' };
+export const metadata: Metadata = { title: 'Replace a record' };
 
 type Params = Promise<{ id: string }>;
 
@@ -21,7 +21,7 @@ export default async function SupersedePage({ params }: { params: Params }) {
   if (!result.ok) {
     return (
       <section>
-        <h1>Supersede record</h1>
+        <h1>Replace a record</h1>
         <ProblemNotice problem={result.problem} title="The record could not be loaded." />
       </section>
     );
@@ -38,16 +38,17 @@ export default async function SupersedePage({ params }: { params: Params }) {
       <p className="crumbs">
         <a href={`/records/${record.id}`}>Back to the record</a>
       </p>
-      <h1>Supersede: {record.title}</h1>
+      <h1>Replace: {record.title}</h1>
       <p className="lede">
-        This creates a new <strong>candidate</strong> linked to the old record. The old record stays as it is until the new one
-        is confirmed; then it drops out of the current view and the approval names it as the antecedent.
+        This saves a new record, <strong>awaiting review</strong>, linked to the old one. The old record stays current and
+        unchanged until someone with authority confirms the new one. Then the old record stops being current, and the
+        confirmation records which record it replaced. Nothing is deleted.
       </p>
-      <ActionForm action={supersedeRecordAction} className="card stack" aria-label="Superseding record" testId="supersede-form">
+      <ActionForm action={supersedeRecordAction} className="card stack" aria-label="Replacement record" testId="supersede-form">
         <input type="hidden" name="recordId" value={record.id} />
         <fieldset>
-          <legend>Evidence</legend>
-          {available.length === 0 ? <p className="hint">The old record has no available evidence; add a span below.</p> : null}
+          <legend>Evidence to keep</legend>
+          {available.length === 0 ? <p className="hint">The old record has no passage that can still be shown; add one below.</p> : null}
           {available.map(e => (
             <label key={e.id} className="check">
               <input
@@ -56,13 +57,16 @@ export default async function SupersedePage({ params }: { params: Params }) {
                 defaultChecked
                 value={[e.sourceId, e.revisionId ?? e.locator.revisionId, e.locator.startChar, e.locator.endChar, e.role].join('|')}
               />{' '}
-              {e.sourceTitle ?? 'Source'} (lines {e.locator.startLine}–{e.locator.endLine}, {e.role}):{' '}
+              {e.sourceTitle ?? 'Source'} (lines {e.locator.startLine}–{e.locator.endLine}, {e.role === 'primary' ? 'main evidence' : 'supporting'}):{' '}
               <span className="muted">{e.locator.excerpt.length > 160 ? `${e.locator.excerpt.slice(0, 159)}…` : e.locator.excerpt}</span>
             </label>
           ))}
           <details>
-            <summary>Add another span</summary>
-            <p className="hint">Offsets are characters into the source&apos;s current revision; select text on the source page to see them.</p>
+            <summary>Add another passage by position</summary>
+            <p className="hint">
+              Positions count characters from the start of the source&apos;s current revision. Selecting text on the source page shows
+              them; adding a passage from the source page is usually easier.
+            </p>
             <label htmlFor="sup-source">Source</label>
             <select id="sup-source" name="sourceId" defaultValue="">
               <option value="">None</option>
@@ -72,18 +76,18 @@ export default async function SupersedePage({ params }: { params: Params }) {
             </select>
             <div className="inline-fields">
               <div>
-                <label htmlFor="sup-start">Start offset</label>
+                <label htmlFor="sup-start">Start position</label>
                 <input id="sup-start" name="startChar" inputMode="numeric" pattern="[0-9]*" />
               </div>
               <div>
-                <label htmlFor="sup-end">End offset</label>
+                <label htmlFor="sup-end">End position</label>
                 <input id="sup-end" name="endChar" inputMode="numeric" pattern="[0-9]*" />
               </div>
               <div>
-                <label htmlFor="sup-role">Role</label>
+                <label htmlFor="sup-role">Kind of evidence</label>
                 <select id="sup-role" name="evidenceRole" defaultValue="primary">
-                  <option value="primary">primary</option>
-                  <option value="supporting">supporting</option>
+                  <option value="primary">Main evidence</option>
+                  <option value="supporting">Supporting</option>
                 </select>
               </div>
             </div>
@@ -91,7 +95,7 @@ export default async function SupersedePage({ params }: { params: Params }) {
         </fieldset>
         <RecordFields idPrefix="sup" actors={actors.ok ? actors.data : []} defaults={{ ...record, timeConflicts: record.timeConflicts }} conflictSources={timeSources} />
         <div className="row actions">
-          <SubmitButton>Create superseding candidate</SubmitButton>
+          <SubmitButton>Save the replacement for review</SubmitButton>
           <a className="button secondary" href={`/records/${record.id}`}>Cancel</a>
         </div>
       </ActionForm>

@@ -14,6 +14,6 @@ test('addToParam accepts a record id and nothing else', () => {
 
 test('the evidence notices have a text; an unknown key has none', () => {
   assert.match(noticeText('evidence-added') ?? '', /Passage added/);
-  assert.match(noticeText('evidence-removed') ?? '', /Citation removed/);
+  assert.match(noticeText('evidence-removed') ?? '', /Passage removed/);
   assert.equal(noticeText('<b>x</b>'), null);
 });

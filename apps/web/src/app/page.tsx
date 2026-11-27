@@ -17,8 +17,9 @@ export default async function HomePage() {
     <section>
       <h1>Your record of evidence, decisions and current state</h1>
       <p className="lede">
-        Paste or upload a source, mark candidates, confirm what was actually decided, and export cited context for the next
-        person or AI. Everything works with AI and peers switched off.
+        Add a source (a chat, document or note), save the facts and decisions in it as records that quote it, confirm what was
+        actually decided, and export the confirmed records for the next person or AI agent. Everything works with AI switched
+        off. New here? The <a href="/glossary">glossary</a> explains the words POII uses.
       </p>
       <dl className="facts">
         <div>
@@ -30,7 +31,7 @@ export default async function HomePage() {
           <dd>{ready.ok && ready.data.aiEnabled ? 'on' : 'off'}</dd>
         </div>
         <div>
-          <dt>Identity</dt>
+          <dt>Signed in as</dt>
           <dd>local owner</dd>
         </div>
       </dl>
@@ -44,7 +45,7 @@ export default async function HomePage() {
           <dd data-testid="count-records"><a href="/records">{count(records)}</a></dd>
         </div>
         <div>
-          <dt>Candidates to review</dt>
+          <dt>Awaiting review</dt>
           <dd data-testid="count-candidates"><a href="/records?reviewState=candidate">{count(candidates)}</a></dd>
         </div>
         <div>
@@ -55,10 +56,10 @@ export default async function HomePage() {
       <h2>Quick links</h2>
       <ul className="quick-links">
         <li><a className="button" href="/sources/new">Add a source</a></li>
-        <li><a className="button secondary" href="/records?reviewState=candidate">Review candidates</a></li>
+        <li><a className="button secondary" href="/records?reviewState=candidate">Review waiting records</a></li>
         <li><a className="button secondary" href="/decisions">Current decisions</a></li>
         <li><a className="button secondary" href="/search">Search</a></li>
-        <li><a className="button secondary" href="/export">Export a context pack</a></li>
+        <li><a className="button secondary" href="/export">Export for a person or AI</a></li>
         <li><a className="button secondary" href="/backup">Back up or restore</a></li>
       </ul>
     </section>

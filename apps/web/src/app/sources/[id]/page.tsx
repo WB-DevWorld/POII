@@ -141,18 +141,18 @@ export default async function SourcePage({ params, searchParams }: { params: Par
       </p>
       {span ? (
         <p className="notice" role="status" data-testid="span-notice">
-          Highlighted span: characters {span.start}–{span.end}, line {lineOfOffset(content, span.start)}.{' '}
-          <a href="#span">Jump to the span</a>
+          Highlighted passage: characters {span.start}–{span.end}, line {lineOfOffset(content, span.start)}.{' '}
+          <a href="#span">Jump to the passage</a>
         </p>
       ) : spanRequested ? (
         <p className="notice warn" role="status">
-          The requested span is outside this revision. It may come from another revision of this source.
+          The linked passage is not in this revision. It may come from another revision of this source.
         </p>
       ) : null}
       <SourceText content={content} revisionId={revision.id} highlight={span} />
 
       {source.archivedAt ? (
-        <p className="notice warn">This source is archived. Unarchive it before citing it in new candidates.</p>
+        <p className="notice warn">This source is archived. Unarchive it before quoting it in new records.</p>
       ) : null}
       {/* #13 AI */}
       <p className="hint">
@@ -161,11 +161,11 @@ export default async function SourcePage({ params, searchParams }: { params: Par
         </a>
       </p>
       {target && !target.ok ? (
-        <ProblemNotice problem={target.problem} title="The record to cite this source for could not be loaded." />
+        <ProblemNotice problem={target.problem} title="The record to add a passage to could not be loaded." />
       ) : null}
       {target?.ok && target.data.reviewState === 'rejected' ? (
         <p className="notice warn" role="status">
-          <a href={`/records/${target.data.id}`}>{target.data.title}</a> was rejected, so it takes no more evidence.
+          <a href={`/records/${target.data.id}`}>{target.data.title}</a> was rejected, so no more evidence can be added to it.
         </p>
       ) : null}
       {target?.ok && target.data.reviewState !== 'rejected' ? (
@@ -208,7 +208,7 @@ export default async function SourcePage({ params, searchParams }: { params: Par
               </div>
               {r.reviewState !== 'rejected' ? (
                 <a className="hint" href={`/sources/${source.id}${query({ revision: isCurrent ? undefined : revision.id, addTo: r.id })}#add-evidence`}>
-                  Cite another passage of this source
+                  Add another passage from this source
                 </a>
               ) : null}
             </li>
@@ -228,7 +228,7 @@ export default async function SourcePage({ params, searchParams }: { params: Par
           <ActionForm action={updateSourceAction} aria-label="AI permission">
             <input type="hidden" name="sourceId" value={source.id} />
             <input type="hidden" name="aiAllowed" value={source.aiAllowed ? 'false' : 'true'} />
-            <SubmitButton className="secondary">{source.aiAllowed ? 'Mark never send to AI' : 'Allow sending to AI'}</SubmitButton>
+            <SubmitButton className="secondary">{source.aiAllowed ? 'Never send to AI' : 'Allow sending to AI'}</SubmitButton>
           </ActionForm>
         </div>
         <div className="card">
@@ -250,16 +250,16 @@ export default async function SourcePage({ params, searchParams }: { params: Par
             <input id="rev-file" name="file" type="file" accept=".md,.markdown,.txt,.json,text/plain,text/markdown" />
             <label htmlFor="rev-note">Note</label>
             <input id="rev-note" name="note" maxLength={2000} />
-            <p className="hint">Identical content changes nothing. Existing citations are re-anchored and labelled exact, moved or lost.</p>
+            <p className="hint">Identical content changes nothing. POII looks for every quoted passage in the new revision and marks each one unchanged, moved or not found.</p>
             <SubmitButton className="secondary">Add revision</SubmitButton>
           </ActionForm>
         </div>
         <div className="card danger-zone">
           <h3>Delete</h3>
           <p className="hint">
-            Deleting removes the content and its search entries immediately. Records that cite it keep their history, but their
-            evidence becomes <strong>unavailable</strong> and every later export lists it as unavailable (deleted). This cannot be
-            undone.
+            Deleting removes the content and its search entries straight away, and this cannot be undone. Records that quote it
+            keep their history, but those passages can no longer be shown, and every later export lists the source as unavailable
+            (deleted). To hide a source without losing it, archive it instead.
           </p>
           <ActionForm action={deleteSourceAction} aria-label="Delete source">
             <input type="hidden" name="sourceId" value={source.id} />
